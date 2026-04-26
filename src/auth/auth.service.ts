@@ -64,7 +64,7 @@ export class AuthService {
     await this.assertUnique(dto.email, dto.nationalId, dto.phoneNumber);
 
     const token = uuidv4();
-    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 hours
+    const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000); // 6 hours
 
     const user = this.usersService.create({
       ...dto,
@@ -112,6 +112,42 @@ export class AuthService {
     if (!user) throw new NotFoundException('User not found');
     const { password, invitationToken, ...safe } = user;
     return safe;
+  }
+
+  async disableUser(id: string, admin: User) {
+    if (admin.role !== Role.ADMINISTRATOR) throw new UnauthorizedException();
+    const user = await this.usersService.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.id === admin.id) throw new BadRequestException('You cannot disable your own account');
+    user.isDisabled = true;
+    await this.usersService.save(user);
+    return { message: `${user.firstName} ${user.lastName} has been disabled` };
+  }
+
+  async enableUser(id: string, admin: User) {
+    if (admin.role !== Role.ADMINISTRATOR) throw new UnauthorizedException();
+    const user = await this.usersService.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    user.isDisabled = false;
+    await this.usersService.save(user);
+    return { message: `${user.firstName} ${user.lastName} has been enabled` };
+  }
+
+  async resendInvitation(id: string, admin: User) {
+    if (admin.role !== Role.ADMINISTRATOR) throw new UnauthorizedException();
+    const user = await this.usersService.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.invitationAccepted) throw new BadRequestException('User has already accepted the invitation');
+
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+
+    user.invitationToken = token;
+    user.invitationExpiresAt = expiresAt;
+    await this.usersService.save(user);
+
+    await this.mailService.sendInvitation(user, token);
+    return { message: `Invitation resent to ${user.email}` };
   }
 
   private async assertUnique(email: string, nationalId: string, phoneNumber: string) {

@@ -6,6 +6,8 @@ import {
   UpdateDateColumn,
   BeforeInsert,
   BeforeUpdate,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../enums/role.enum';
@@ -48,6 +50,9 @@ export class User {
   @Column({ default: false })
   isActive: boolean;
 
+  @Column({ default: false })
+  isDisabled: boolean;
+
   @Column({ type: 'varchar', nullable: true, unique: true })
   invitationToken: string | null;
 
@@ -56,6 +61,16 @@ export class User {
 
   @Column({ default: false })
   invitationAccepted: boolean;
+
+  @Column({ nullable: true })
+  lastActiveAt: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  createdById: string | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'createdById' })
+  createdBy: User;
 
   @CreateDateColumn()
   createdAt: Date;
