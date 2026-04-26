@@ -1,0 +1,134 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { v4 as uuidv4 } from 'uuid';
+import { UsersService } from '../users/users.service';
+import { MailService } from '../mail/mail.service';
+import { Role } from '../users/enums/role.enum';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { InviteUserDto } from './dto/invite-user.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { User } from '../users/entities/user.entity';
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
+  ) {}
+
+  async register(dto: RegisterDto) {
+    await this.assertUnique(dto.email, dto.nationalId, dto.phoneNumber);
+
+    const user = this.usersService.create({
+      ...dto,
+      role: Role.CITIZEN,
+      isActive: true,
+    });
+    await this.usersService.save(user);
+
+    return this.buildTokenResponse(user);
+  }
+
+  async login(dto: LoginDto) {
+    const user =
+      (await this.usersService.findByEmail(dto.identifier)) ??
+      (await this.usersService.findByNationalId(dto.identifier));
+
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user.password) throw new UnauthorizedException('Account not activated yet');
+    if (!user.isActive) throw new UnauthorizedException('Account is not active');
+
+    const valid = await user.validatePassword(dto.password);
+    if (!valid) throw new UnauthorizedException('Invalid credentials');
+
+    return this.buildTokenResponse(user);
+  }
+
+  async inviteUser(dto: InviteUserDto, admin: User) {
+    if (admin.role !== Role.ADMINISTRATOR) {
+      throw new UnauthorizedException('Only administrators can send invitations');
+    }
+    if (dto.role === Role.CITIZEN) {
+      throw new BadRequestException('Citizens register themselves — no invitation needed');
+    }
+
+    await this.assertUnique(dto.email, dto.nationalId, dto.phoneNumber);
+
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 hours
+
+    const user = this.usersService.create({
+      ...dto,
+      invitationToken: token,
+      invitationExpiresAt: expiresAt,
+      isActive: false,
+    });
+    await this.usersService.save(user);
+
+    await this.mailService.sendInvitation(user, token);
+
+    return { message: `Invitation sent to ${dto.email}` };
+  }
+
+  async setPassword(dto: SetPasswordDto) {
+    const user = await this.usersService.findByInvitationToken(dto.token);
+
+    if (!user) throw new NotFoundException('Invalid or expired invitation link');
+    if (user.invitationExpiresAt < new Date()) {
+      throw new BadRequestException('This invitation link has expired. Please contact your administrator.');
+    }
+    if (user.invitationAccepted) {
+      throw new BadRequestException('This invitation has already been used');
+    }
+
+    user.password = dto.password;
+    user.isActive = true;
+    user.invitationAccepted = true;
+    user.invitationToken = null;
+    await this.usersService.save(user);
+
+    return this.buildTokenResponse(user);
+  }
+
+  async updateProfile(id: string, dto: UpdateProfileDto) {
+    const user = await this.usersService.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+
+    Object.assign(user, dto);
+    return this.usersService.save(user);
+  }
+
+  async getProfile(id: string) {
+    const user = await this.usersService.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    const { password, invitationToken, ...safe } = user;
+    return safe;
+  }
+
+  private async assertUnique(email: string, nationalId: string, phoneNumber: string) {
+    if (await this.usersService.findByEmail(email)) {
+      throw new ConflictException('Email is already registered');
+    }
+    if (await this.usersService.findByNationalId(nationalId)) {
+      throw new ConflictException('National ID is already registered');
+    }
+    if (await this.usersService.findByPhoneNumber(phoneNumber)) {
+      throw new ConflictException('Phone number is already registered');
+    }
+  }
+
+  private buildTokenResponse(user: User) {
+    const token = this.jwtService.sign({ sub: user.id, role: user.role });
+    const { password, invitationToken, ...profile } = user;
+    return { accessToken: token, user: profile };
+  }
+}
