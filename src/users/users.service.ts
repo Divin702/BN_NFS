@@ -45,6 +45,10 @@ export class UsersService {
     return this.repo.findOne({ where: { invitationToken: token } });
   }
 
+  findByPasswordResetToken(token: string) {
+    return this.repo.findOne({ where: { passwordResetToken: token } });
+  }
+
   findById(id: string) {
     return this.repo.findOne({ where: { id } });
   }

@@ -20,6 +20,56 @@ export class MailService {
     });
   }
 
+  async sendPasswordReset(user: User, token: string) {
+    const frontendUrl = this.config.get('FRONTEND_URL');
+    const link = `${frontendUrl}/reset-password?token=${token}`;
+    const fullName = `${user.firstName} ${user.lastName}`;
+
+    const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<style>
+  body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;padding:0}
+  .wrapper{max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+  .header{background:#0a66c2;padding:32px 40px;text-align:center}
+  .header h1{color:#fff;margin:0;font-size:22px;letter-spacing:1px}
+  .header p{color:#cce0f5;margin:6px 0 0;font-size:13px}
+  .body{padding:36px 40px}
+  .body h2{color:#0a66c2;font-size:18px;margin-top:0}
+  .body p{color:#444;line-height:1.6;font-size:15px}
+  .btn{display:inline-block;margin:24px 0;padding:14px 32px;background:#0a66c2;color:#fff;text-decoration:none;border-radius:6px;font-size:15px;font-weight:bold}
+  .notice{background:#fff8e1;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;font-size:13px;color:#555}
+  .footer{text-align:center;padding:20px 40px;font-size:12px;color:#999;border-top:1px solid #eee}
+</style></head>
+<body>
+  <div class="wrapper">
+    <div class="header"><h1>NFS – Notary File System</h1><p>Password Reset Request</p></div>
+    <div class="body">
+      <h2>Hello, ${fullName}</h2>
+      <p>We received a request to reset your password. Click the button below to create a new password:</p>
+      <a href="${link}" class="btn">Reset My Password</a>
+      <div class="notice">
+        <strong>⚠ This link expires in 1 hour.</strong> If you did not request a password reset, you can safely ignore this email — your account is secure.
+      </div>
+      <p style="margin-top:24px;font-size:13px;color:#666;">Or paste this URL in your browser:<br/><span style="word-break:break-all;color:#0a66c2">${link}</span></p>
+    </div>
+    <div class="footer">&copy; ${new Date().getFullYear()} NFS – Notary File System. All rights reserved.</div>
+  </div>
+</body></html>`;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.config.get('MAIL_FROM'),
+        to: user.email,
+        subject: 'Reset your NFS password',
+        html,
+      });
+      this.logger.log(`Password reset email sent to ${user.email}`);
+    } catch (err) {
+      this.logger.error(`Failed to send password reset to ${user.email}`, err);
+      throw err;
+    }
+  }
+
   async sendInvitation(user: User, token: string) {
     const frontendUrl = this.config.get('FRONTEND_URL');
     const link = `${frontendUrl}/auth/accept-invitation?token=${token}`;

@@ -13,6 +13,9 @@ import { Role } from '../users/enums/role.enum';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { User } from '../users/entities/user.entity';
@@ -148,6 +151,62 @@ export class AuthService {
 
     await this.mailService.sendInvitation(user, token);
     return { message: `Invitation resent to ${user.email}` };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.usersService.findByEmail(dto.email);
+
+    // Always return success — never reveal whether an email exists
+    if (!user || !user.isActive || user.isDisabled) {
+      return { message: 'If that email is registered, a reset link has been sent.' };
+    }
+
+    const token = uuidv4();
+    user.passwordResetToken = token;
+    user.passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await this.usersService.save(user);
+
+    await this.mailService.sendPasswordReset(user, token);
+    return { message: 'If that email is registered, a reset link has been sent.' };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const user = await this.usersService.findByPasswordResetToken(dto.token);
+
+    if (!user || !user.passwordResetToken) {
+      throw new BadRequestException('This reset link is invalid or has already been used.');
+    }
+    if (!user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
+      throw new BadRequestException('This reset link has expired. Please request a new one.');
+    }
+
+    user.password = dto.password;
+    user.passwordResetToken = null;
+    user.passwordResetExpiresAt = null;
+    await this.usersService.save(user);
+
+    return { message: 'Password reset successfully. You can now log in.' };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!user.password) {
+      throw new BadRequestException('Your account does not have a password set yet.');
+    }
+
+    const valid = await user.validatePassword(dto.currentPassword);
+    if (!valid) throw new BadRequestException('Current password is incorrect.');
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must be different from your current password.');
+    }
+
+    user.password = dto.newPassword;
+    await this.usersService.save(user);
+
+    return { message: 'Password changed successfully.' };
   }
 
   private async assertUnique(email: string, nationalId: string, phoneNumber: string) {
