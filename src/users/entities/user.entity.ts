@@ -56,7 +56,13 @@ export class User {
   @Column({ type: 'varchar', nullable: true, unique: true })
   invitationToken: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
+  passwordResetToken: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordResetExpiresAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
   invitationExpiresAt: Date;
 
   @Column({ default: false })
