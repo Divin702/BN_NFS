@@ -19,8 +19,15 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalHttpExceptionFilter());
   app.useGlobalInterceptors(new ResponseInterceptor());
 
+  // Allow any localhost port in dev — Next.js auto-bumps ports when 3000 is busy
+  const localhostPattern = /^http:\/\/localhost:(3000|3001|3002|3003|3004|3005)$/;
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin) return cb(null, true); // curl, server-to-server
+      if (localhostPattern.test(origin)) return cb(null, true);
+      if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return cb(null, true);
+      return cb(new Error(`CORS blocked: ${origin}`), false);
+    },
     credentials: true,
   });
 

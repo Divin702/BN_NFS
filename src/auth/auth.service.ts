@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -75,9 +76,17 @@ export class AuthService {
       invitationExpiresAt: expiresAt,
       isActive: false,
     });
-    await this.usersService.save(user);
+    const saved = await this.usersService.save(user);
 
-    await this.mailService.sendInvitation(user, token);
+    try {
+      await this.mailService.sendInvitation(saved, token);
+    } catch (err) {
+      // Roll back the user — admin sees a clean error and can retry
+      await this.usersService.remove(saved.id);
+      throw new ServiceUnavailableException(
+        'Could not send the invitation email. Please check the SMTP configuration and try again.',
+      );
+    }
 
     return { message: `Invitation sent to ${dto.email}` };
   }
@@ -149,7 +158,13 @@ export class AuthService {
     user.invitationExpiresAt = expiresAt;
     await this.usersService.save(user);
 
-    await this.mailService.sendInvitation(user, token);
+    try {
+      await this.mailService.sendInvitation(user, token);
+    } catch (err) {
+      throw new ServiceUnavailableException(
+        'Could not resend the invitation email. Please check the SMTP configuration and try again.',
+      );
+    }
     return { message: `Invitation resent to ${user.email}` };
   }
 

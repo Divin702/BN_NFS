@@ -21,6 +21,7 @@ export class MailService {
   }
 
   async sendPasswordReset(user: User, token: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const frontendUrl = this.config.get('FRONTEND_URL');
     const link = `${frontendUrl}/reset-password?token=${token}`;
     const fullName = `${user.firstName} ${user.lastName}`;
@@ -42,17 +43,17 @@ export class MailService {
 </style></head>
 <body>
   <div class="wrapper">
-    <div class="header"><h1>NFS – Notary File System</h1><p>Password Reset Request</p></div>
+    <div class="header"><h1>NFS Notary File System</h1><p>Password Reset Request</p></div>
     <div class="body">
       <h2>Hello, ${fullName}</h2>
       <p>We received a request to reset your password. Click the button below to create a new password:</p>
-      <a href="${link}" class="btn">Reset My Password</a>
+      <a href="${link}" class="btn" style="color:#ffffff !important; background:#0a66c2; text-decoration:none;"><span style="color:#ffffff !important;">Reset My Password</span></a>
       <div class="notice">
-        <strong>⚠ This link expires in 1 hour.</strong> If you did not request a password reset, you can safely ignore this email — your account is secure.
+        <strong>This link expires in 1 hour.</strong> If you did not request a password reset, you can safely ignore this email your account is secure.
       </div>
       <p style="margin-top:24px;font-size:13px;color:#666;">Or paste this URL in your browser:<br/><span style="word-break:break-all;color:#0a66c2">${link}</span></p>
     </div>
-    <div class="footer">&copy; ${new Date().getFullYear()} NFS – Notary File System. All rights reserved.</div>
+    <div class="footer">&copy; ${new Date().getFullYear()} NFS Notary File System. All rights reserved.</div>
   </div>
 </body></html>`;
 
@@ -71,10 +72,13 @@ export class MailService {
   }
 
   async sendInvitation(user: User, token: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const frontendUrl = this.config.get('FRONTEND_URL');
-    const link = `${frontendUrl}/auth/accept-invitation?token=${token}`;
+    const link = `${frontendUrl}/accept-invitation?token=${token}`;
     const fullName = `${user.firstName} ${user.lastName}`;
-    const roleLabel = user.role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    const roleLabel = user.role
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
 
     const html = `
 <!DOCTYPE html>
@@ -98,14 +102,14 @@ export class MailService {
 <body>
   <div class="wrapper">
     <div class="header">
-      <h1>NFS – Notary File System</h1>
+      <h1>NFS Notary File System</h1>
       <p>Official Platform Invitation</p>
     </div>
     <div class="body">
       <h2>Welcome, ${fullName}!</h2>
       <p>You have been invited to join the <strong>Notary File System (NFS)</strong> platform as a <strong>${roleLabel}</strong>.</p>
       <p>To activate your account and set your password, click the button below:</p>
-      <a href="${link}" class="btn">Activate My Account</a>
+      <a href="${link}" class="btn" style="color:#ffffff !important; background:#1a3c6e; text-decoration:none;"><span style="color:#ffffff !important;">Activate My Account</span></a>
       <div class="notice">
         <strong>Note:</strong> This invitation link will expire in <strong>72 hours</strong>. If you did not expect this invitation, you can safely ignore this email.
       </div>
@@ -113,7 +117,7 @@ export class MailService {
       <p style="word-break:break-all; font-size:13px; color:#1a3c6e;">${link}</p>
     </div>
     <div class="footer">
-      &copy; ${new Date().getFullYear()} NFS – Notary File System. All rights reserved.
+      &copy; ${new Date().getFullYear()} NFS Notary File System. All rights reserved.
     </div>
   </div>
 </body>
