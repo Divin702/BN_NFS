@@ -24,9 +24,10 @@ export class InviteUserDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: '1199900054321' })
+  @ApiProperty({ example: '1199900054321678', description: 'Exactly 16 digits' })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d{16}$/, { message: 'National ID must be exactly 16 digits' })
   nationalId: string;
 
   @ApiProperty({ example: '+250788111111' })

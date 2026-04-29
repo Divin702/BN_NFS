@@ -1,6 +1,4 @@
 # Environment variables - NEVER commit these
-.env
-.env.*
 !.env.example
 
 # Dependencies
@@ -34,3 +32,4 @@ coverage/
 
 # Claude Code
 CLAUDE.md
+config.bat

@@ -135,4 +135,8 @@ export class UsersService {
   create(data: Partial<User>) {
     return this.repo.create(data);
   }
+
+  remove(id: string) {
+    return this.repo.delete(id);
+  }
 }
