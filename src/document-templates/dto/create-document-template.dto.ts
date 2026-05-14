@@ -1,5 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, Matches } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, Matches, IsArray, ValidateNested, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class TemplateFieldDto {
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+
+  @IsString()
+  @IsNotEmpty()
+  label: string;
+
+  @IsBoolean()
+  required: boolean;
+}
 import { TemplateStatus } from '../enums/template-status.enum';
 
 export class CreateDocumentTemplateDto {
@@ -41,4 +55,14 @@ export class CreateDocumentTemplateDto {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'JSON array of template fields',
+    type: [TemplateFieldDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateFieldDto)
+  fields?: TemplateFieldDto[];
 }
