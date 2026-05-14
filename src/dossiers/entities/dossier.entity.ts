@@ -3,10 +3,12 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { Client } from '../../clients/entities/client.entity';
 import { User } from '../../users/entities/user.entity';
+import { DossierParty } from './dossier-party.entity';
 
 export enum DossierStatus {
   OPEN = 'open',
@@ -74,6 +76,9 @@ export class Dossier {
 
   @Column({ type: 'integer', nullable: true })
   totalFee: number | null;
+
+  @OneToMany(() => DossierParty, (p) => p.dossier, { cascade: true, eager: false })
+  parties: DossierParty[];
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;

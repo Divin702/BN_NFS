@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -89,6 +90,12 @@ export class DossiersController {
   @ApiQuery({ name: 'url', required: true, description: 'URL of the document to remove' })
   removeDocument(@Param('id') id: string, @Query('url') url: string) {
     return this.dossiersService.removeDocument(id, url);
+  }
+
+  @Put(':id/parties')
+  @ApiOperation({ summary: 'Replace all parties on a dossier' })
+  updateParties(@Param('id') id: string, @Body() body: { parties: any[] }) {
+    return this.dossiersService.updateParties(id, body.parties);
   }
 
   @Delete(':id')

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Dossier, DossierStatus } from './entities/dossier.entity';
+import { DossierParty } from './entities/dossier-party.entity';
 import { User } from '../users/entities/user.entity';
 import { NotaryService } from '../notary-services/entities/notary-service.entity';
 import { CreateDossierDto } from './dto/create-dossier.dto';
@@ -16,6 +17,8 @@ export class DossiersService {
     private readonly dossiersRepository: Repository<Dossier>,
     @InjectRepository(NotaryService)
     private readonly notaryServicesRepo: Repository<NotaryService>,
+    @InjectRepository(DossierParty)
+    private readonly partiesRepo: Repository<DossierParty>,
   ) {}
 
   generateNumber(year: number, sequence: number): string {
@@ -58,7 +61,22 @@ export class DossiersService {
       totalFee,
     });
 
-    return this.dossiersRepository.save(dossier);
+    const saved = await this.dossiersRepository.save(dossier);
+
+    if (dto.parties && dto.parties.length > 0) {
+      const partyEntities = dto.parties.map((p, index) =>
+        this.partiesRepo.create({
+          dossierId: saved.id,
+          clientId: p.clientId,
+          roleKey: p.roleKey,
+          roleLabel: p.roleLabel,
+          isPrimary: p.isPrimary ?? index === 0,
+        })
+      );
+      await this.partiesRepo.save(partyEntities);
+    }
+
+    return saved;
   }
 
   async findAll(
@@ -70,7 +88,9 @@ export class DossiersService {
     const qb = this.dossiersRepository
       .createQueryBuilder('dossier')
       .leftJoinAndSelect('dossier.client', 'client')
-      .leftJoinAndSelect('dossier.assignedNotary', 'assignedNotary');
+      .leftJoinAndSelect('dossier.assignedNotary', 'assignedNotary')
+      .leftJoinAndSelect('dossier.parties', 'parties')
+      .leftJoinAndSelect('parties.client', 'partyClient');
 
     if (q) {
       qb.andWhere(
@@ -84,7 +104,11 @@ export class DossiersService {
     }
 
     if (clientId) {
-      qb.andWhere('dossier.clientId = :clientId', { clientId });
+      // Match dossiers where client is primary OR a party
+      qb.andWhere(
+        '(dossier.clientId = :clientId OR parties.clientId = :clientId)',
+        { clientId },
+      );
     }
 
     if (assignedNotaryId) {
@@ -101,7 +125,7 @@ export class DossiersService {
   async findOne(id: string): Promise<Dossier> {
     const dossier = await this.dossiersRepository.findOne({
       where: { id },
-      relations: ['client', 'assignedNotary'],
+      relations: ['client', 'assignedNotary', 'parties', 'parties.client'],
     });
     if (!dossier) {
       throw new NotFoundException(`Dossier with id ${id} not found`);
@@ -193,6 +217,18 @@ export class DossiersService {
     ]);
 
     return { open, inProgress, completed, archived, total };
+  }
+
+  async updateParties(dossierId: string, parties: { clientId: string; roleKey: string; roleLabel: string; isPrimary?: boolean }[]): Promise<DossierParty[]> {
+    await this.partiesRepo.delete({ dossierId });
+    const entities = parties.map((p, i) => this.partiesRepo.create({
+      dossierId,
+      clientId: p.clientId,
+      roleKey: p.roleKey,
+      roleLabel: p.roleLabel,
+      isPrimary: p.isPrimary ?? i === 0,
+    }));
+    return this.partiesRepo.save(entities);
   }
 
   async remove(id: string): Promise<void> {
