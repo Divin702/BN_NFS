@@ -47,6 +47,9 @@ export class DocumentTemplate {
   @JoinColumn({ name: 'createdById' })
   createdBy: User;
 
+  @Column({ type: 'jsonb', default: [] })
+  fields: { key: string; label: string; required: boolean }[];
+
   @CreateDateColumn()
   createdAt: Date;
 
