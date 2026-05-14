@@ -14,6 +14,20 @@ class TemplateFieldDto {
   @IsBoolean()
   required: boolean;
 }
+
+class PartyRoleDto {
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+
+  @IsString()
+  @IsNotEmpty()
+  label: string;
+
+  @IsBoolean()
+  required: boolean;
+}
+
 import { TemplateStatus } from '../enums/template-status.enum';
 
 export class CreateDocumentTemplateDto {
@@ -65,4 +79,14 @@ export class CreateDocumentTemplateDto {
   @ValidateNested({ each: true })
   @Type(() => TemplateFieldDto)
   fields?: TemplateFieldDto[];
+
+  @ApiPropertyOptional({
+    description: 'JSON array of party role definitions',
+    type: [PartyRoleDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PartyRoleDto)
+  partyRoles?: PartyRoleDto[];
 }

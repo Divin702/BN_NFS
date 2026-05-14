@@ -50,6 +50,10 @@ export class DocumentTemplate {
   @Column({ type: 'jsonb', default: [] })
   fields: { key: string; label: string; required: boolean }[];
 
+  // Array of party role definitions, e.g. [{ key: "seller", label: "Seller", required: true }, { key: "buyer", label: "Buyer", required: true }]
+  @Column({ type: 'jsonb', default: [] })
+  partyRoles: { key: string; label: string; required: boolean }[];
+
   @CreateDateColumn()
   createdAt: Date;
 
