@@ -1,98 +1,251 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# NFS Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A NestJS REST API for the Notary File System — a digital case management platform for notary offices. The API handles authentication, user management, client registration, dossier lifecycle, document templates, and notarial services.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## Prerequisites
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Node.js 18 or later
+- npm 9 or later
+- A PostgreSQL database (local or [Neon](https://neon.tech) serverless Postgres — free tier is sufficient)
+- A Gmail account with 2-Factor Authentication enabled (for email delivery)
 
-## Project setup
+---
+
+## Getting Started
+
+### 1. Clone and install
 
 ```bash
-$ npm install
+git clone <repository-url> bn_divin
+cd bn_divin
+npm install
 ```
 
-## Compile and run the project
+### 2. Configure environment variables
+
+Create a `.env` file in the project root:
+
+```env
+PORT=3001
+NODE_ENV=development
+DATABASE_URL=postgresql://user:password@host/dbname
+JWT_SECRET=<random_strong_secret>
+JWT_EXPIRES_IN=7d
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USER=<your_gmail_address>
+MAIL_PASS=<16_char_google_app_password>
+MAIL_FROM="NFS System <your@gmail.com>"
+FRONTEND_URL=http://localhost:3000
+```
+
+See the [Environment Variables](#environment-variables) section for details on each variable.
+
+### 3. Run in development
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run start:dev
 ```
 
-## Run tests
+The API will be available at [http://localhost:3001](http://localhost:3001).  
+Swagger documentation: [http://localhost:3001/api/docs](http://localhost:3001/api/docs).
+
+### 4. Build and run in production
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run build
+npm run start:prod
 ```
 
-## Deployment
+### 5. Seed the database (optional)
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+The seed script creates an initial administrator account:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run seed
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## Project Structure
 
-Check out a few resources that may come in handy when working with NestJS:
+```text
+bn_divin/src/
+├── auth/                  # JWT authentication, login, password reset, invitation flow
+├── users/                 # User CRUD, roles, invitation management, account enable/disable
+├── clients/               # Client registration (name, national ID, phone, photo URL)
+├── dossiers/              # Dossier creation, status transitions, document attachments, notes
+├── notary-services/       # Notarial service types and their official fees
+├── template-categories/   # Categories that group document templates
+├── document-templates/    # HTML templates with structured field definitions
+├── mail/                  # Nodemailer wrapper for transactional emails
+├── database/              # TypeORM DataSource configuration and seed script
+└── main.ts                # Bootstrap: CORS, validation pipe, Swagger setup
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+---
 
-## Support
+## API Overview
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+| Module | Base Path | Description |
+| --- | --- | --- |
+| Auth | `/auth` | Login, forgot password, reset password, accept invitation |
+| Users | `/users` | List, invite, enable/disable user accounts |
+| Clients | `/clients` | Register and retrieve clients |
+| Dossiers | `/dossiers` | Full dossier lifecycle: create, update status, attach documents |
+| Notary Services | `/notary-services` | Service type definitions with official fees |
+| Template Categories | `/template-categories` | Category groupings for document templates |
+| Document Templates | `/document-templates` | HTML templates with field schemas |
 
-## Stay in touch
+Full request/response schemas are available in Swagger at `http://localhost:3001/api/docs`.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+---
 
-## License
+## Environment Variables
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+| Variable | Required | Description |
+| --- | --- | --- |
+| `PORT` | No | Port the server listens on. Defaults to `3001` |
+| `NODE_ENV` | Yes | `development` or `production`. Controls TypeORM sync behavior |
+| `DATABASE_URL` | Yes | Full PostgreSQL connection string. Supports Neon `?sslmode=require` |
+| `JWT_SECRET` | Yes | Secret used to sign JWT tokens. Use a long random string |
+| `JWT_EXPIRES_IN` | Yes | Token lifetime. Example: `7d`, `24h` |
+| `MAIL_HOST` | Yes | SMTP host. Use `smtp.gmail.com` for Gmail |
+| `MAIL_PORT` | Yes | SMTP port. Use `587` for Gmail STARTTLS |
+| `MAIL_USER` | Yes | Gmail address used as the sending account |
+| `MAIL_PASS` | Yes | 16-character Google App Password (not your Gmail login password) |
+| `MAIL_FROM` | Yes | Display name and address in the `From` header. Example: `"NFS System <noreply@gmail.com>"` |
+| `FRONTEND_URL` | Yes | Base URL of the frontend. Used to construct links in emails. Example: `http://localhost:3000` |
+
+---
+
+## Authentication Flow
+
+### Login
+
+1. Client sends `POST /auth/login` with `{ email, password }`.
+2. Server validates credentials, signs a JWT, and returns `{ access_token, user }`.
+3. The client stores the token and attaches it as `Authorization: Bearer <token>` on subsequent requests.
+4. Protected routes use a JWT Guard that verifies the token and attaches the user to the request.
+
+### Invitation-Based Registration
+
+Notary accounts are not self-registered. The flow is:
+
+1. An administrator calls `POST /users/invite` with the new user's email and role.
+2. The server creates a user record with a hashed invitation token and sends an email containing a link to `<FRONTEND_URL>/accept-invitation?token=<raw_token>`.
+3. The recipient opens the link and submits their name and chosen password via the frontend.
+4. The frontend calls `POST /auth/accept-invitation` with the token and new credentials.
+5. The server verifies the token, hashes the password, activates the account, and returns a JWT.
+
+### Forgot / Reset Password
+
+1. User submits their email to `POST /auth/forgot-password`.
+2. Server generates a time-limited reset token, stores a hash, and emails a reset link.
+3. User follows the link and submits a new password to `POST /auth/reset-password`.
+
+---
+
+## Role Permissions
+
+| Action | Administrator | Notary Public |
+| --- | --- | --- |
+| Invite users | Yes | No |
+| Enable / disable user accounts | Yes | No |
+| View all users | Yes | No |
+| Define notarial services and fees | Yes | No |
+| Create / edit template categories | Yes | No |
+| Create / edit document templates | Yes | No |
+| Register clients | Yes | Yes |
+| View clients | All clients | Own clients only |
+| Create dossiers | Yes | Yes |
+| View dossiers | All dossiers | Own dossiers only |
+| Change dossier status | Yes | Yes |
+| Assign notary to dossier | Yes | No |
+| Upload documents to dossier | Yes | Yes |
+| Archive dossiers | Yes | Yes |
+
+Role values as stored in the database:
+
+| Display Name | Enum Value |
+| --- | --- |
+| Administrator | `administrator` |
+| Notary Public | `notary_public` |
+
+---
+
+## Database
+
+The application uses TypeORM with PostgreSQL. The recommended hosted option is [Neon](https://neon.tech), which provides serverless Postgres with a free tier.
+
+### Connection
+
+Set `DATABASE_URL` to a standard PostgreSQL connection string:
+
+```text
+postgresql://user:password@host/dbname?sslmode=require
+```
+
+Neon connection strings are available from the Neon dashboard under the project's connection details.
+
+### Schema Synchronization
+
+When `NODE_ENV=development`, TypeORM `synchronize: true` is enabled. This automatically alters the database schema to match entity definitions on every startup — suitable for development, **not for production**.
+
+In production, set `NODE_ENV=production` to disable synchronization and use manual migrations instead.
+
+---
+
+## Gmail SMTP Setup
+
+The application uses Gmail SMTP with App Passwords. Standard Gmail password authentication is not supported.
+
+**Steps to obtain an App Password:**
+
+1. Enable 2-Factor Authentication on the Gmail account at [myaccount.google.com/security](https://myaccount.google.com/security).
+2. Go to **Security > 2-Step Verification > App passwords**.
+3. Select app: **Mail**, device: **Other**, and enter a label (e.g., `NFS`).
+4. Google generates a 16-character password. Copy it immediately — it is only shown once.
+5. Set `MAIL_PASS` to this 16-character password (without spaces).
+
+---
+
+## Dossier Numbering
+
+Every dossier is assigned an auto-incremented reference number in the format:
+
+```text
+NFS-{YEAR}-{SEQUENCE}
+```
+
+Examples: `NFS-2026-00001`, `NFS-2026-00042`.
+
+The sequence resets each calendar year. The year is taken from the creation timestamp, and the sequence is zero-padded to five digits.
+
+---
+
+## Fee Structure
+
+Notarial services have a two-tier fee model:
+
+| Fee Component | Set By | Description |
+| --- | --- | --- |
+| Official fee | Administrator | The regulated, government-mandated fee for the service type (RWF) |
+| Notary fee | Notary Public | The notary's own additional charge, set per dossier |
+| **Total fee** | Calculated | Official fee + Notary fee |
+
+When creating a dossier, the notary selects a service and enters their fee. The total is derived automatically and stored on the dossier record.
+
+---
+
+## Swagger Documentation
+
+Interactive API documentation is available at:
+
+```text
+http://localhost:3001/api/docs
+```
+
+All endpoints are grouped by module and include full request/response schemas, required fields, and authentication requirements. Use the **Authorize** button to supply a Bearer token for testing protected endpoints.
