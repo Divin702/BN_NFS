@@ -47,10 +47,14 @@ export class DossiersController {
   }
 
   @Get('stats')
-  @ApiOperation({ summary: 'Get dossier counts by status' })
-  getStats(@CurrentUser() user: User) {
+  @ApiOperation({ summary: 'Get dossier counts by status, optionally filtered by date range' })
+  getStats(
+    @CurrentUser() user: User,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
     const notaryId = user.role === Role.NOTARY_PUBLIC ? user.id : undefined;
-    return this.dossiersService.getStats(notaryId);
+    return this.dossiersService.getStats(notaryId, dateFrom, dateTo);
   }
 
   @Get(':id')

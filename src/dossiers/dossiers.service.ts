@@ -82,7 +82,7 @@ export class DossiersService {
   async findAll(
     query: SearchDossiersDto,
   ): Promise<{ data: Dossier[]; total: number; page: number; limit: number }> {
-    const { q, status, clientId, assignedNotaryId, page = 1, limit = 20 } = query;
+    const { q, status, clientId, assignedNotaryId, dateFrom, dateTo, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.dossiersRepository
@@ -104,7 +104,6 @@ export class DossiersService {
     }
 
     if (clientId) {
-      // Match dossiers where client is primary OR a party
       qb.andWhere(
         '(dossier.clientId = :clientId OR parties.clientId = :clientId)',
         { clientId },
@@ -113,6 +112,14 @@ export class DossiersService {
 
     if (assignedNotaryId) {
       qb.andWhere('dossier.assignedNotaryId = :assignedNotaryId', { assignedNotaryId });
+    }
+
+    if (dateFrom) {
+      qb.andWhere('dossier.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+    }
+
+    if (dateTo) {
+      qb.andWhere('dossier.createdAt <= :dateTo', { dateTo: new Date(dateTo) });
     }
 
     qb.orderBy('dossier.createdAt', 'DESC').skip(skip).take(limit);
@@ -200,20 +207,26 @@ export class DossiersService {
     return this.dossiersRepository.save(dossier);
   }
 
-  async getStats(notaryId?: string): Promise<{
-    open: number;
-    inProgress: number;
-    completed: number;
-    archived: number;
-    total: number;
-  }> {
-    const base = notaryId ? { assignedNotaryId: notaryId } : {};
+  async getStats(
+    notaryId?: string,
+    dateFrom?: string,
+    dateTo?: string,
+  ): Promise<{ open: number; inProgress: number; completed: number; archived: number; total: number }> {
+    const buildQb = (status?: DossierStatus) => {
+      const qb = this.dossiersRepository.createQueryBuilder('d');
+      if (notaryId) qb.andWhere('d.assignedNotaryId = :notaryId', { notaryId });
+      if (status)   qb.andWhere('d.status = :status', { status });
+      if (dateFrom) qb.andWhere('d.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+      if (dateTo)   qb.andWhere('d.createdAt <= :dateTo',   { dateTo:   new Date(dateTo)   });
+      return qb.getCount();
+    };
+
     const [open, inProgress, completed, archived, total] = await Promise.all([
-      this.dossiersRepository.count({ where: { ...base, status: DossierStatus.OPEN } }),
-      this.dossiersRepository.count({ where: { ...base, status: DossierStatus.IN_PROGRESS } }),
-      this.dossiersRepository.count({ where: { ...base, status: DossierStatus.COMPLETED } }),
-      this.dossiersRepository.count({ where: { ...base, status: DossierStatus.ARCHIVED } }),
-      this.dossiersRepository.count({ where: base }),
+      buildQb(DossierStatus.OPEN),
+      buildQb(DossierStatus.IN_PROGRESS),
+      buildQb(DossierStatus.COMPLETED),
+      buildQb(DossierStatus.ARCHIVED),
+      buildQb(),
     ]);
 
     return { open, inProgress, completed, archived, total };
