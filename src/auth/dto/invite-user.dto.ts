@@ -35,7 +35,7 @@ export class InviteUserDto {
   @Matches(/^\+?[1-9]\d{7,14}$/, { message: 'Invalid phone number' })
   phoneNumber: string;
 
-  @ApiProperty({ enum: Role, example: Role.LEGAL_CLERK })
+  @ApiProperty({ enum: Role, example: Role.NOTARY_PUBLIC })
   @IsEnum(Role)
   role: Role;
 

@@ -11,7 +11,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { Role } from '../users/enums/role.enum';
-import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -28,19 +27,6 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
   ) {}
-
-  async register(dto: RegisterDto) {
-    await this.assertUnique(dto.email, dto.nationalId, dto.phoneNumber);
-
-    const user = this.usersService.create({
-      ...dto,
-      role: Role.CITIZEN,
-      isActive: true,
-    });
-    await this.usersService.save(user);
-
-    return this.buildTokenResponse(user);
-  }
 
   async login(dto: LoginDto) {
     const user =
@@ -61,10 +47,6 @@ export class AuthService {
     if (admin.role !== Role.ADMINISTRATOR) {
       throw new UnauthorizedException('Only administrators can send invitations');
     }
-    if (dto.role === Role.CITIZEN) {
-      throw new BadRequestException('Citizens register themselves — no invitation needed');
-    }
-
     await this.assertUnique(dto.email, dto.nationalId, dto.phoneNumber);
 
     const token = uuidv4();

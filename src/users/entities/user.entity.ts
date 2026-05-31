@@ -35,7 +35,7 @@ export class User {
   @Column({ nullable: true })
   password: string;
 
-  @Column({ type: 'enum', enum: Role, default: Role.CITIZEN })
+  @Column({ type: 'enum', enum: Role, default: Role.NOTARY_PUBLIC })
   role: Role;
 
   @Column({ nullable: true })
@@ -87,6 +87,9 @@ export class User {
   @BeforeInsert()
   @BeforeUpdate()
   async hashPassword() {
+    if (this.email) {
+      this.email = this.email.toLowerCase().trim();
+    }
     if (this.password && !this.password.startsWith('$2')) {
       this.password = await bcrypt.hash(this.password, 12);
     }

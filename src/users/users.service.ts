@@ -30,7 +30,7 @@ export class UsersService {
   ) {}
 
   findByEmail(email: string) {
-    return this.repo.findOne({ where: { email } });
+    return this.repo.findOne({ where: { email: email.toLowerCase().trim() } });
   }
 
   findByNationalId(nationalId: string) {
