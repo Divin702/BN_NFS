@@ -8,13 +8,18 @@ export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter;
   private readonly isDev: boolean;
+  private usingEthereal = false;
 
   constructor(private readonly config: ConfigService) {
     this.isDev = config.get<string>('NODE_ENV') !== 'production';
   }
 
   async onModuleInit() {
-    if (this.isDev) {
+    const mailUser = this.config.get<string>('MAIL_USER');
+    const mailPass = this.config.get<string>('MAIL_PASS');
+    const useEthereal = this.isDev && (!mailUser || !mailPass);
+
+    if (useEthereal) {
       const testAccount = await nodemailer.createTestAccount();
       this.transporter = nodemailer.createTransport({
         host: 'smtp.ethereal.email',
@@ -22,26 +27,25 @@ export class MailService implements OnModuleInit {
         secure: false,
         auth: { user: testAccount.user, pass: testAccount.pass },
       });
+      this.usingEthereal = true;
       this.logger.log(
-        'Dev mail: Ethereal (fake SMTP) — a preview URL will be logged for every sent email',
+        'Dev mail: Ethereal (fake SMTP) — a preview URL will be logged per email',
       );
     } else {
       this.transporter = nodemailer.createTransport({
         host: this.config.get('MAIL_HOST'),
         port: this.config.get<number>('MAIL_PORT'),
         secure: this.config.get<number>('MAIL_PORT') === 465,
-        auth: {
-          user: this.config.get('MAIL_USER'),
-          pass: this.config.get('MAIL_PASS'),
-        },
+        auth: { user: mailUser, pass: mailPass },
         tls: { rejectUnauthorized: false },
       });
+      this.logger.log(`Mail: using SMTP ${this.config.get('MAIL_HOST')} as ${mailUser}`);
     }
   }
 
   private async send(options: nodemailer.SendMailOptions): Promise<void> {
     const info = await this.transporter.sendMail(options);
-    if (this.isDev) {
+    if (this.usingEthereal) {
       const previewUrl = nodemailer.getTestMessageUrl(info);
       this.logger.log(`Preview email in browser → ${previewUrl}`);
     }
