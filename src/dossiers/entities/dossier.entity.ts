@@ -51,6 +51,9 @@ export class Dossier {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  templateFields: Record<string, string> | null;
+
   @Column({ type: 'jsonb', default: [] })
   documents: { name: string; url: string; uploadedAt: string }[];
 

@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString, IsInt, Min, IsBoolean, IsArray, ValidateNested, IsNotEmpty } from 'class-validator';
+import { IsUUID, IsOptional, IsString, IsInt, Min, IsBoolean, IsArray, ValidateNested, IsNotEmpty, IsObject } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -54,6 +54,11 @@ export class CreateDossierDto {
   @IsInt()
   @Min(0)
   notaryFee?: number;
+
+  @ApiPropertyOptional({ description: 'Filled template fields keyed by field key' })
+  @IsOptional()
+  @IsObject()
+  templateFields?: Record<string, string>;
 
   @ApiPropertyOptional({ description: 'Party roles for this dossier', type: [DossierPartyDto] })
   @IsOptional()
