@@ -1,31 +1,54 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { User } from '../users/entities/user.entity';
 
 @Injectable()
-export class MailService {
+export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter;
+  private readonly isDev: boolean;
 
   constructor(private readonly config: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: config.get('MAIL_HOST'),
-      port: config.get<number>('MAIL_PORT'),
-      secure: config.get<number>('MAIL_PORT') === 465,
-      auth: {
-        user: config.get('MAIL_USER'),
-        pass: config.get('MAIL_PASS'),
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
+    this.isDev = config.get<string>('NODE_ENV') !== 'production';
   }
 
-  async sendPasswordReset(user: User, token: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const frontendUrl = this.config.get('FRONTEND_URL');
+  async onModuleInit() {
+    if (this.isDev) {
+      const testAccount = await nodemailer.createTestAccount();
+      this.transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+      });
+      this.logger.log(
+        'Dev mail: Ethereal (fake SMTP) — a preview URL will be logged for every sent email',
+      );
+    } else {
+      this.transporter = nodemailer.createTransport({
+        host: this.config.get('MAIL_HOST'),
+        port: this.config.get<number>('MAIL_PORT'),
+        secure: this.config.get<number>('MAIL_PORT') === 465,
+        auth: {
+          user: this.config.get('MAIL_USER'),
+          pass: this.config.get('MAIL_PASS'),
+        },
+        tls: { rejectUnauthorized: false },
+      });
+    }
+  }
+
+  private async send(options: nodemailer.SendMailOptions): Promise<void> {
+    const info = await this.transporter.sendMail(options);
+    if (this.isDev) {
+      const previewUrl = nodemailer.getTestMessageUrl(info);
+      this.logger.log(`Preview email in browser → ${previewUrl}`);
+    }
+  }
+
+  async sendPasswordReset(user: User, token: string): Promise<void> {
+    const frontendUrl = this.config.get<string>('FRONTEND_URL');
     const link = `${frontendUrl}/reset-password?token=${token}`;
     const fullName = `${user.firstName} ${user.lastName}`;
 
@@ -52,7 +75,7 @@ export class MailService {
       <p>We received a request to reset your password. Click the button below to create a new password:</p>
       <a href="${link}" class="btn" style="color:#ffffff !important; background:#0a66c2; text-decoration:none;"><span style="color:#ffffff !important;">Reset My Password</span></a>
       <div class="notice">
-        <strong>This link expires in 1 hour.</strong> If you did not request a password reset, you can safely ignore this email your account is secure.
+        <strong>This link expires in 1 hour.</strong> If you did not request a password reset, you can safely ignore this email — your account is secure.
       </div>
       <p style="margin-top:24px;font-size:13px;color:#666;">Or paste this URL in your browser:<br/><span style="word-break:break-all;color:#0a66c2">${link}</span></p>
     </div>
@@ -61,7 +84,7 @@ export class MailService {
 </body></html>`;
 
     try {
-      await this.transporter.sendMail({
+      await this.send({
         from: this.config.get('MAIL_FROM'),
         to: user.email,
         subject: 'Reset your NFS password',
@@ -74,9 +97,8 @@ export class MailService {
     }
   }
 
-  async sendInvitation(user: User, token: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const frontendUrl = this.config.get('FRONTEND_URL');
+  async sendInvitation(user: User, token: string): Promise<void> {
+    const frontendUrl = this.config.get<string>('FRONTEND_URL');
     const link = `${frontendUrl}/accept-invitation?token=${token}`;
     const fullName = `${user.firstName} ${user.lastName}`;
     const roleLabel = user.role
@@ -124,11 +146,10 @@ export class MailService {
     </div>
   </div>
 </body>
-</html>
-    `;
+</html>`;
 
     try {
-      await this.transporter.sendMail({
+      await this.send({
         from: this.config.get('MAIL_FROM'),
         to: user.email,
         subject: `You're invited to NFS as ${roleLabel}`,
