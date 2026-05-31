@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -96,5 +96,27 @@ export class ClientsService {
   async remove(id: string): Promise<void> {
     const client = await this.findOne(id);
     await this.clientsRepository.remove(client);
+  }
+
+  async saveFingerprint(id: string, template: string): Promise<Client> {
+    const client = await this.findOne(id);
+    client.fingerprintTemplate = template;
+    client.updatedAt = new Date();
+    return this.clientsRepository.save(client);
+  }
+
+  async removeFingerprint(id: string): Promise<Client> {
+    const client = await this.findOne(id);
+    client.fingerprintTemplate = null;
+    client.updatedAt = new Date();
+    return this.clientsRepository.save(client);
+  }
+
+  async getAllFingerprintTemplates(): Promise<{ clientId: string; template: string }[]> {
+    const clients = await this.clientsRepository.find({
+      where: { fingerprintTemplate: Not(IsNull()) },
+      select: ['id', 'fingerprintTemplate'],
+    });
+    return clients.map((c) => ({ clientId: c.id, template: c.fingerprintTemplate! }));
   }
 }
