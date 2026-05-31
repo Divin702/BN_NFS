@@ -9,6 +9,15 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+class SaveFingerprintDto {
+  @ApiProperty({ description: 'Base64-encoded fingerprint template from ARATEK SDK' })
+  @IsString()
+  @IsNotEmpty()
+  template: string;
+}
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -59,5 +68,23 @@ export class ClientsController {
   @ApiOperation({ summary: 'Delete a client (Admin only)' })
   remove(@Param('id') id: string) {
     return this.clientsService.remove(id);
+  }
+
+  @Get('fingerprints/templates')
+  @ApiOperation({ summary: 'Get all enrolled fingerprint templates — used by the local Windows agent for 1:N matching' })
+  getAllFingerprintTemplates() {
+    return this.clientsService.getAllFingerprintTemplates();
+  }
+
+  @Post(':id/fingerprint')
+  @ApiOperation({ summary: 'Save an enrolled fingerprint template for a client' })
+  saveFingerprint(@Param('id') id: string, @Body() dto: SaveFingerprintDto) {
+    return this.clientsService.saveFingerprint(id, dto.template);
+  }
+
+  @Delete(':id/fingerprint')
+  @ApiOperation({ summary: 'Remove the fingerprint template for a client' })
+  removeFingerprint(@Param('id') id: string) {
+    return this.clientsService.removeFingerprint(id);
   }
 }

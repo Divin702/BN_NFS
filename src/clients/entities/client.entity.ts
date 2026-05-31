@@ -23,6 +23,9 @@ export class Client {
   @Column({ type: 'varchar', nullable: true })
   photoUrl: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  fingerprintTemplate: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;
 
