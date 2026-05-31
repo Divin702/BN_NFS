@@ -19,14 +19,14 @@ export class DocumentTemplatesController {
   constructor(private readonly svc: DocumentTemplatesService) {}
 
   @Get()
-  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC, Role.LEGAL_CLERK)
+  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC)
   @ApiOperation({ summary: 'List templates with filters and pagination' })
   findAll(@Query() query: QueryDocumentTemplateDto) {
     return this.svc.findAll(query);
   }
 
   @Get(':id')
-  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC, Role.LEGAL_CLERK)
+  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC)
   @ApiOperation({ summary: 'Get single template' })
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);

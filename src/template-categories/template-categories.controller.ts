@@ -16,12 +16,12 @@ export class TemplateCategoriesController {
   constructor(private readonly svc: TemplateCategoriesService) {}
 
   @Get()
-  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC, Role.LEGAL_CLERK)
+  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC)
   @ApiOperation({ summary: 'List all categories' })
   findAll() { return this.svc.findAll(); }
 
   @Get(':id')
-  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC, Role.LEGAL_CLERK)
+  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC)
   @ApiOperation({ summary: 'Get single category' })
   findOne(@Param('id') id: string) { return this.svc.findOne(id); }
 
