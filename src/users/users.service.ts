@@ -128,6 +128,14 @@ export class UsersService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  findNotaries() {
+    return this.repo.find({
+      where: { role: Role.NOTARY_PUBLIC, isActive: true, isDisabled: false },
+      select: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'organization', 'address', 'picture', 'signature'],
+      order: { firstName: 'ASC' },
+    });
+  }
+
   save(user: User) {
     return this.repo.save(user);
   }

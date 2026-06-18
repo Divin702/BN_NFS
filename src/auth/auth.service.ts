@@ -28,6 +28,33 @@ export class AuthService {
     private readonly mailService: MailService,
   ) {}
 
+  async registerClient(dto: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    nationalId: string;
+    phoneNumber: string;
+    password: string;
+  }) {
+    await this.assertUnique(dto.email, dto.nationalId, dto.phoneNumber);
+    const user = this.usersService.create({
+      ...dto,
+      role: Role.CLIENT,
+      isActive: true,
+    });
+    const saved = await this.usersService.save(user);
+    return this.buildTokenResponse(saved);
+  }
+
+  async saveSignature(userId: string, signatureUrl: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    user.signature = signatureUrl;
+    const saved = await this.usersService.save(user);
+    const { password, invitationToken, ...safe } = saved;
+    return safe;
+  }
+
   async login(dto: LoginDto) {
     const user =
       (await this.usersService.findByEmail(dto.identifier)) ??

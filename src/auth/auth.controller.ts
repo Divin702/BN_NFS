@@ -13,6 +13,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RegisterClientDto } from './dto/register-client.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -35,6 +36,20 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with Email or National ID + Password' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('register')
+  @ApiOperation({ summary: 'Public client self-registration' })
+  register(@Body() dto: RegisterClientDto) {
+    return this.authService.registerClient(dto);
+  }
+
+  @Patch('me/signature')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Save notary signature (base64 data URL or Cloudinary URL)' })
+  saveSignature(@CurrentUser() user: User, @Body('signatureUrl') signatureUrl: string) {
+    return this.authService.saveSignature(user.id, signatureUrl);
   }
 
   @Post('invite')

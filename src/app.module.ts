@@ -9,6 +9,7 @@ import { DocumentTemplatesModule } from './document-templates/document-templates
 import { ClientsModule } from './clients/clients.module';
 import { DossiersModule } from './dossiers/dossiers.module';
 import { NotaryServicesModule } from './notary-services/notary-services.module';
+import { RequestsModule } from './requests/requests.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { NotaryServicesModule } from './notary-services/notary-services.module';
     ClientsModule,
     DossiersModule,
     NotaryServicesModule,
+    RequestsModule,
   ],
 })
 export class AppModule {}
