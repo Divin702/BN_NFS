@@ -50,6 +50,9 @@ export class NotarizationRequest {
   @Column({ type: 'text', nullable: true })
   notaryNotes: string;
 
+  @Column({ nullable: true })
+  notaryDocumentUrl: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
