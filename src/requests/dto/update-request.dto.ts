@@ -12,4 +12,9 @@ export class UpdateRequestDto {
   @IsOptional()
   @IsString()
   notaryNotes?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notaryDocumentUrl?: string;
 }
