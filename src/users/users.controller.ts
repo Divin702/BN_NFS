@@ -21,6 +21,13 @@ export class UsersController {
     private readonly authService: AuthService,
   ) {}
 
+  @Get('notaries')
+  @Roles(Role.CLIENT, Role.NOTARY_PUBLIC, Role.ADMINISTRATOR)
+  @ApiOperation({ summary: 'Public list of active notaries (for client portal)' })
+  listNotaries() {
+    return this.usersService.findNotaries();
+  }
+
   @Get()
   @ApiOperation({ summary: 'List all users with search, filter, and pagination' })
   findAll(@Query() query: UsersQueryDto) {

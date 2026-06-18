@@ -69,6 +69,9 @@ export class User {
   invitationAccepted: boolean;
 
   @Column({ nullable: true })
+  signature: string;
+
+  @Column({ nullable: true })
   lastActiveAt: Date;
 
   @Column({ type: 'varchar', nullable: true })
