@@ -10,6 +10,7 @@ import { ClientsModule } from './clients/clients.module';
 import { DossiersModule } from './dossiers/dossiers.module';
 import { NotaryServicesModule } from './notary-services/notary-services.module';
 import { RequestsModule } from './requests/requests.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { RequestsModule } from './requests/requests.module';
     DossiersModule,
     NotaryServicesModule,
     RequestsModule,
+    AppointmentsModule,
   ],
 })
 export class AppModule {}
