@@ -5,7 +5,7 @@ import { Appointment, AppointmentStatus } from './entities/appointment.entity';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { User } from '../users/entities/user.entity';
-import { Role } from '../common/enums/role.enum';
+import { Role } from '../users/enums/role.enum';
 
 @Injectable()
 export class AppointmentsService {
