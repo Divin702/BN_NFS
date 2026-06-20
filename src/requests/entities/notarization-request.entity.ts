@@ -44,6 +44,9 @@ export class NotarizationRequest {
   @Column({ type: 'simple-json', nullable: true, default: '[]' })
   attachmentUrls: string[];
 
+  @Column({ nullable: true })
+  idImageUrl: string;
+
   @Column({ type: 'enum', enum: RequestStatus, default: RequestStatus.PENDING })
   status: RequestStatus;
 
