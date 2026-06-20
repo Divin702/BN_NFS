@@ -47,6 +47,9 @@ export class Appointment {
   @Column({ type: 'text', nullable: true })
   clientNotes: string;
 
+  @Column({ type: 'simple-json', nullable: true, default: '[]' })
+  documentUrls: string[];
+
   @Column({ type: 'text', nullable: true })
   notaryNotes: string;
 
