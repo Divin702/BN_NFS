@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateRequestDto {
@@ -16,8 +16,9 @@ export class CreateRequestDto {
   @IsNotEmpty()
   description: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
-  @IsString()
-  attachmentUrl?: string;
+  @IsArray()
+  @IsString({ each: true })
+  attachmentUrls?: string[];
 }
