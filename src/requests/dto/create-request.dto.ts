@@ -21,4 +21,9 @@ export class CreateRequestDto {
   @IsArray()
   @IsString({ each: true })
   attachmentUrls?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  idImageUrl?: string;
 }
