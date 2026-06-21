@@ -36,6 +36,9 @@ export class DossierParty {
   @Column({ default: false })
   isPrimary: boolean;
 
+  @Column({ type: 'varchar', nullable: true })
+  signatureUrl: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;
 }

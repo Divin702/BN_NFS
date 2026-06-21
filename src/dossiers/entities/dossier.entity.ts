@@ -80,6 +80,9 @@ export class Dossier {
   @Column({ type: 'integer', nullable: true })
   totalFee: number | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  notarySignatureUrl: string | null;
+
   @OneToMany(() => DossierParty, (p) => p.dossier, { cascade: true, eager: false })
   parties: DossierParty[];
 

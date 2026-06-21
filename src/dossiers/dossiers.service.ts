@@ -59,6 +59,8 @@ export class DossiersService {
       serviceName,
       officialFee,
       totalFee,
+      // Stamp the notary's signature on the dossier; fall back to the creator's.
+      notarySignatureUrl: dto.notarySignatureUrl ?? createdByUser.signature ?? null,
     });
 
     const saved = await this.dossiersRepository.save(dossier);
@@ -71,6 +73,7 @@ export class DossiersService {
           roleKey: p.roleKey,
           roleLabel: p.roleLabel,
           isPrimary: p.isPrimary ?? index === 0,
+          signatureUrl: p.signatureUrl ?? null,
         })
       );
       await this.partiesRepo.save(partyEntities);
