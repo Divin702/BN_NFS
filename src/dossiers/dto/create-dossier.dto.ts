@@ -17,6 +17,10 @@ class DossierPartyDto {
   @IsBoolean()
   @IsOptional()
   isPrimary?: boolean;
+
+  @IsString()
+  @IsOptional()
+  signatureUrl?: string;
 }
 
 export class CreateDossierDto {
@@ -66,4 +70,9 @@ export class CreateDossierDto {
   @ValidateNested({ each: true })
   @Type(() => DossierPartyDto)
   parties?: DossierPartyDto[];
+
+  @ApiPropertyOptional({ description: "Notary's signature image URL stamped on the dossier" })
+  @IsOptional()
+  @IsString()
+  notarySignatureUrl?: string;
 }
