@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Dossier, DossierStatus } from './entities/dossier.entity';
 import { DossierParty } from './entities/dossier-party.entity';
 import { User } from '../users/entities/user.entity';
+import { Role } from '../users/enums/role.enum';
 import { NotaryService } from '../notary-services/entities/notary-service.entity';
 import { CreateDossierDto } from './dto/create-dossier.dto';
 import { UpdateDossierDto } from './dto/update-dossier.dto';
@@ -42,7 +43,9 @@ export class DossiersService {
     let totalFee: number | null = null;
 
     if (dto.serviceId) {
-      const service = await this.notaryServicesRepo.findOne({ where: { id: dto.serviceId } });
+      const service = await this.notaryServicesRepo.findOne({
+        where: { id: dto.serviceId },
+      });
       if (service) {
         serviceName = service.name;
         officialFee = service.officialFee;
@@ -50,8 +53,15 @@ export class DossiersService {
       }
     }
 
+    // When a notary creates the dossier and no notary was explicitly assigned,
+    // assign the creating notary so the dossier always records its officer.
+    const assignedNotaryId =
+      dto.assignedNotaryId ??
+      (createdByUser.role === Role.NOTARY_PUBLIC ? createdByUser.id : null);
+
     const dossier = this.dossiersRepository.create({
       ...dto,
+      assignedNotaryId,
       number,
       status: DossierStatus.OPEN,
       documents: [],
@@ -60,7 +70,9 @@ export class DossiersService {
       officialFee,
       totalFee,
       // Stamp the notary's signature on the dossier; fall back to the creator's.
-      notarySignatureUrl: dto.notarySignatureUrl ?? createdByUser.signature ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      notarySignatureUrl:
+        dto.notarySignatureUrl ?? createdByUser.signature ?? null,
     });
 
     const saved = await this.dossiersRepository.save(dossier);
@@ -68,13 +80,15 @@ export class DossiersService {
     if (dto.parties && dto.parties.length > 0) {
       const partyEntities = dto.parties.map((p, index) =>
         this.partiesRepo.create({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           dossierId: saved.id,
           clientId: p.clientId,
           roleKey: p.roleKey,
           roleLabel: p.roleLabel,
           isPrimary: p.isPrimary ?? index === 0,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           signatureUrl: p.signatureUrl ?? null,
-        })
+        }),
       );
       await this.partiesRepo.save(partyEntities);
     }
@@ -85,7 +99,16 @@ export class DossiersService {
   async findAll(
     query: SearchDossiersDto,
   ): Promise<{ data: Dossier[]; total: number; page: number; limit: number }> {
-    const { q, status, clientId, assignedNotaryId, dateFrom, dateTo, page = 1, limit = 20 } = query;
+    const {
+      q,
+      status,
+      clientId,
+      assignedNotaryId,
+      dateFrom,
+      dateTo,
+      page = 1,
+      limit = 20,
+    } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.dossiersRepository
@@ -114,11 +137,15 @@ export class DossiersService {
     }
 
     if (assignedNotaryId) {
-      qb.andWhere('dossier.assignedNotaryId = :assignedNotaryId', { assignedNotaryId });
+      qb.andWhere('dossier.assignedNotaryId = :assignedNotaryId', {
+        assignedNotaryId,
+      });
     }
 
     if (dateFrom) {
-      qb.andWhere('dossier.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+      qb.andWhere('dossier.createdAt >= :dateFrom', {
+        dateFrom: new Date(dateFrom),
+      });
     }
 
     if (dateTo) {
@@ -143,7 +170,11 @@ export class DossiersService {
     return dossier;
   }
 
-  async update(id: string, dto: UpdateDossierDto, updatedByUser: User): Promise<Dossier> {
+  async update(
+    id: string,
+    dto: UpdateDossierDto,
+    updatedByUser: User,
+  ): Promise<Dossier> {
     const dossier = await this.findOne(id);
 
     if (dto.status && dto.status !== dossier.status) {
@@ -164,7 +195,11 @@ export class DossiersService {
     return this.dossiersRepository.save(dossier);
   }
 
-  async changeStatus(id: string, status: DossierStatus, changedByUser: User): Promise<Dossier> {
+  async changeStatus(
+    id: string,
+    status: DossierStatus,
+    changedByUser: User,
+  ): Promise<Dossier> {
     const dossier = await this.findOne(id);
 
     if (status !== dossier.status) {
@@ -204,7 +239,9 @@ export class DossiersService {
   async removeDocument(id: string, documentUrl: string): Promise<Dossier> {
     const dossier = await this.findOne(id);
 
-    dossier.documents = dossier.documents.filter((doc) => doc.url !== documentUrl);
+    dossier.documents = dossier.documents.filter(
+      (doc) => doc.url !== documentUrl,
+    );
     dossier.updatedAt = new Date();
 
     return this.dossiersRepository.save(dossier);
@@ -214,13 +251,23 @@ export class DossiersService {
     notaryId?: string,
     dateFrom?: string,
     dateTo?: string,
-  ): Promise<{ open: number; inProgress: number; completed: number; archived: number; total: number }> {
+  ): Promise<{
+    open: number;
+    inProgress: number;
+    completed: number;
+    archived: number;
+    total: number;
+  }> {
     const buildQb = (status?: DossierStatus) => {
       const qb = this.dossiersRepository.createQueryBuilder('d');
       if (notaryId) qb.andWhere('d.assignedNotaryId = :notaryId', { notaryId });
-      if (status)   qb.andWhere('d.status = :status', { status });
-      if (dateFrom) qb.andWhere('d.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
-      if (dateTo)   qb.andWhere('d.createdAt <= :dateTo',   { dateTo:   new Date(dateTo)   });
+      if (status) qb.andWhere('d.status = :status', { status });
+      if (dateFrom)
+        qb.andWhere('d.createdAt >= :dateFrom', {
+          dateFrom: new Date(dateFrom),
+        });
+      if (dateTo)
+        qb.andWhere('d.createdAt <= :dateTo', { dateTo: new Date(dateTo) });
       return qb.getCount();
     };
 
@@ -235,15 +282,25 @@ export class DossiersService {
     return { open, inProgress, completed, archived, total };
   }
 
-  async updateParties(dossierId: string, parties: { clientId: string; roleKey: string; roleLabel: string; isPrimary?: boolean }[]): Promise<DossierParty[]> {
+  async updateParties(
+    dossierId: string,
+    parties: {
+      clientId: string;
+      roleKey: string;
+      roleLabel: string;
+      isPrimary?: boolean;
+    }[],
+  ): Promise<DossierParty[]> {
     await this.partiesRepo.delete({ dossierId });
-    const entities = parties.map((p, i) => this.partiesRepo.create({
-      dossierId,
-      clientId: p.clientId,
-      roleKey: p.roleKey,
-      roleLabel: p.roleLabel,
-      isPrimary: p.isPrimary ?? i === 0,
-    }));
+    const entities = parties.map((p, i) =>
+      this.partiesRepo.create({
+        dossierId,
+        clientId: p.clientId,
+        roleKey: p.roleKey,
+        roleLabel: p.roleLabel,
+        isPrimary: p.isPrimary ?? i === 0,
+      }),
+    );
     return this.partiesRepo.save(entities);
   }
 
