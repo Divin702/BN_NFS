@@ -124,6 +124,16 @@ export class ClientsService {
 
   async remove(id: string): Promise<void> {
     const client = await this.findOne(id);
+
+    // Detach this client from any dossiers where they are the primary client.
+    // The Dossier FK has no onDelete rule, so PostgreSQL would reject the delete without this.
+    await this.dossiersRepository
+      .createQueryBuilder()
+      .update()
+      .set({ clientId: null })
+      .where('"clientId" = :id', { id })
+      .execute();
+
     // Also remove the login account so the client can no longer sign in
     const userAccount = await this.usersRepository.findOne({
       where: { nationalId: client.nationalId, role: Role.CLIENT },
@@ -131,6 +141,7 @@ export class ClientsService {
     if (userAccount) {
       await this.usersRepository.remove(userAccount);
     }
+
     await this.clientsRepository.remove(client);
   }
 
