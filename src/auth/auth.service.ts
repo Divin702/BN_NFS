@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
+import { ClientsService } from '../clients/clients.service';
 import { Role } from '../users/enums/role.enum';
 import { LoginDto } from './dto/login.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
@@ -26,6 +27,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
+    private readonly clientsService: ClientsService,
   ) {}
 
   async registerClient(dto: {
@@ -43,6 +45,21 @@ export class AuthService {
       isActive: true,
     });
     const saved = await this.usersService.save(user);
+
+    // Mirror into the clients table so the client is visible in the dashboard.
+    // Wrapped in try/catch: if a client record with this nationalId already exists, skip silently.
+    try {
+      await this.clientsService.create({
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        nationalId: dto.nationalId,
+        phone: dto.phoneNumber,
+        email: dto.email,
+      });
+    } catch {
+      // ConflictException — client already exists in the clients table, no action needed
+    }
+
     return this.buildTokenResponse(saved);
   }
 
