@@ -26,6 +26,9 @@ export class Client {
   @Column({ type: 'text', nullable: true })
   fingerprintTemplate: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  createdByNotaryId: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;
 

@@ -46,8 +46,9 @@ export class ClientsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new client' })
-  create(@Body() dto: CreateClientDto) {
-    return this.clientsService.create(dto);
+  create(@Body() dto: CreateClientDto, @CurrentUser() user: User) {
+    const createdByNotaryId = user.role === Role.NOTARY_PUBLIC ? user.id : undefined;
+    return this.clientsService.create(dto, createdByNotaryId);
   }
 
   @Get(':id')

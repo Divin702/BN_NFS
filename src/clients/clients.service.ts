@@ -23,7 +23,7 @@ export class ClientsService {
     private readonly partiesRepository: Repository<DossierParty>,
   ) {}
 
-  async create(dto: CreateClientDto): Promise<Client> {
+  async create(dto: CreateClientDto, createdByNotaryId?: string): Promise<Client> {
     const existing = await this.clientsRepository.findOne({
       where: { nationalId: dto.nationalId },
     });
@@ -32,7 +32,10 @@ export class ClientsService {
         `A client with national ID ${dto.nationalId} already exists`,
       );
     }
-    const client = this.clientsRepository.create(dto);
+    const client = this.clientsRepository.create({
+      ...dto,
+      createdByNotaryId: createdByNotaryId ?? null,
+    });
     return this.clientsRepository.save(client);
   }
 
@@ -46,7 +49,7 @@ export class ClientsService {
     const qb = this.clientsRepository.createQueryBuilder('client');
 
     if (notaryId) {
-      // Collect clients from this notary's dossiers — both primary client and party clients
+      // Show clients this notary created, plus clients in their dossiers (primary + party slots)
       const [dossiers, parties] = await Promise.all([
         this.dossiersRepository.find({
           where: { assignedNotaryId: notaryId },
@@ -58,14 +61,21 @@ export class ClientsService {
           .select('p.clientId')
           .getMany(),
       ]);
-      const clientIds = [
+      const dossierClientIds = [
         ...new Set([
           ...dossiers.map((d) => d.clientId).filter(Boolean),
           ...parties.map((p) => p.clientId).filter(Boolean),
         ]),
       ] as string[];
-      if (clientIds.length === 0) return { data: [], total: 0, page, limit };
-      qb.andWhere('client.id IN (:...clientIds)', { clientIds });
+
+      if (dossierClientIds.length > 0) {
+        qb.andWhere(
+          '(client.createdByNotaryId = :notaryId OR client.id IN (:...dossierClientIds))',
+          { notaryId, dossierClientIds },
+        );
+      } else {
+        qb.andWhere('client.createdByNotaryId = :notaryId', { notaryId });
+      }
     }
 
     if (q) {
