@@ -25,12 +25,12 @@ export class Dossier {
   @Column({ unique: true })
   number: string;
 
-  @ManyToOne(() => Client, { eager: true, nullable: false })
+  @ManyToOne(() => Client, { eager: true, nullable: true })
   @JoinColumn({ name: 'clientId' })
-  client: Client;
+  client: Client | null;
 
-  @Column()
-  clientId: string;
+  @Column({ nullable: true })
+  clientId: string | null;
 
   @ManyToOne(() => User, { eager: true, nullable: true })
   @JoinColumn({ name: 'assignedNotaryId' })
