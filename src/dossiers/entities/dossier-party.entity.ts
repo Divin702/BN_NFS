@@ -20,12 +20,12 @@ export class DossierParty {
   @JoinColumn({ name: 'dossierId' })
   dossier: Dossier;
 
-  @Column()
-  clientId: string;
+  @Column({ nullable: true })
+  clientId: string | null;
 
-  @ManyToOne(() => Client, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Client, { eager: true, nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'clientId' })
-  client: Client;
+  client: Client | null;
 
   @Column({ type: 'varchar' })
   roleKey: string;
