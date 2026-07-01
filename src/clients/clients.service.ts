@@ -10,6 +10,7 @@ import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { SearchClientsDto } from './dto/search-clients.dto';
 import { Dossier } from '../dossiers/entities/dossier.entity';
+import { DossierParty } from '../dossiers/entities/dossier-party.entity';
 
 @Injectable()
 export class ClientsService {
@@ -18,6 +19,8 @@ export class ClientsService {
     private readonly clientsRepository: Repository<Client>,
     @InjectRepository(Dossier)
     private readonly dossiersRepository: Repository<Dossier>,
+    @InjectRepository(DossierParty)
+    private readonly partiesRepository: Repository<DossierParty>,
   ) {}
 
   async create(dto: CreateClientDto): Promise<Client> {
@@ -43,12 +46,24 @@ export class ClientsService {
     const qb = this.clientsRepository.createQueryBuilder('client');
 
     if (notaryId) {
-      // Only return clients who have at least one dossier assigned to this notary
-      const dossiers = await this.dossiersRepository.find({
-        where: { assignedNotaryId: notaryId },
-        select: ['clientId'],
-      });
-      const clientIds = [...new Set(dossiers.map((d) => d.clientId))];
+      // Collect clients from this notary's dossiers — both primary client and party clients
+      const [dossiers, parties] = await Promise.all([
+        this.dossiersRepository.find({
+          where: { assignedNotaryId: notaryId },
+          select: ['clientId'],
+        }),
+        this.partiesRepository
+          .createQueryBuilder('p')
+          .innerJoin('p.dossier', 'd', 'd.assignedNotaryId = :notaryId', { notaryId })
+          .select('p.clientId')
+          .getMany(),
+      ]);
+      const clientIds = [
+        ...new Set([
+          ...dossiers.map((d) => d.clientId).filter(Boolean),
+          ...parties.map((p) => p.clientId).filter(Boolean),
+        ]),
+      ] as string[];
       if (clientIds.length === 0) return { data: [], total: 0, page, limit };
       qb.andWhere('client.id IN (:...clientIds)', { clientIds });
     }
