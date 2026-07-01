@@ -11,6 +11,8 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { SearchClientsDto } from './dto/search-clients.dto';
 import { Dossier } from '../dossiers/entities/dossier.entity';
 import { DossierParty } from '../dossiers/entities/dossier-party.entity';
+import { User } from '../users/entities/user.entity';
+import { Role } from '../users/enums/role.enum';
 
 @Injectable()
 export class ClientsService {
@@ -21,6 +23,8 @@ export class ClientsService {
     private readonly dossiersRepository: Repository<Dossier>,
     @InjectRepository(DossierParty)
     private readonly partiesRepository: Repository<DossierParty>,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
   ) {}
 
   async create(dto: CreateClientDto, createdByNotaryId?: string): Promise<Client> {
@@ -120,6 +124,13 @@ export class ClientsService {
 
   async remove(id: string): Promise<void> {
     const client = await this.findOne(id);
+    // Also remove the login account so the client can no longer sign in
+    const userAccount = await this.usersRepository.findOne({
+      where: { nationalId: client.nationalId, role: Role.CLIENT },
+    });
+    if (userAccount) {
+      await this.usersRepository.remove(userAccount);
+    }
     await this.clientsRepository.remove(client);
   }
 

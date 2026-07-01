@@ -65,8 +65,8 @@ export class ClientsController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMINISTRATOR)
-  @ApiOperation({ summary: 'Delete a client (Admin only)' })
+  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC)
+  @ApiOperation({ summary: 'Delete a client (Admin or Notary)' })
   remove(@Param('id') id: string) {
     return this.clientsService.remove(id);
   }
