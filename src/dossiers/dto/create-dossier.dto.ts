@@ -3,8 +3,9 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class DossierPartyDto {
+  @IsOptional()
   @IsUUID()
-  clientId: string;
+  clientId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -24,9 +25,10 @@ class DossierPartyDto {
 }
 
 export class CreateDossierDto {
-  @ApiProperty({ description: 'UUID of the client' })
+  @ApiPropertyOptional({ description: 'UUID of the client' })
+  @IsOptional()
   @IsUUID()
-  clientId: string;
+  clientId?: string;
 
   @ApiPropertyOptional({ description: 'UUID of the assigned notary' })
   @IsOptional()

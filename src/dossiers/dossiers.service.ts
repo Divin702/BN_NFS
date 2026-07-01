@@ -77,12 +77,13 @@ export class DossiersService {
 
     const saved = await this.dossiersRepository.save(dossier);
 
-    if (dto.parties && dto.parties.length > 0) {
-      const partyEntities = dto.parties.map((p, index) =>
+    const filledParties = (dto.parties ?? []).filter((p) => p.clientId);
+    if (filledParties.length > 0) {
+      const partyEntities = filledParties.map((p, index) =>
         this.partiesRepo.create({
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           dossierId: saved.id,
-          clientId: p.clientId,
+          clientId: p.clientId ?? null,
           roleKey: p.roleKey,
           roleLabel: p.roleLabel,
           isPrimary: p.isPrimary ?? index === 0,
