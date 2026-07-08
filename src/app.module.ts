@@ -11,6 +11,7 @@ import { DossiersModule } from './dossiers/dossiers.module';
 import { NotaryServicesModule } from './notary-services/notary-services.module';
 import { RequestsModule } from './requests/requests.module';
 import { AppointmentsModule } from './appointments/appointments.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
     NotaryServicesModule,
     RequestsModule,
     AppointmentsModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
