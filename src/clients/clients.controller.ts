@@ -13,10 +13,17 @@ import { IsString, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 class SaveFingerprintDto {
-  @ApiProperty({ description: 'Base64-encoded fingerprint template from ARATEK SDK' })
+  @ApiProperty({ description: 'Base64-encoded fingerprint template from DigitalPersona WebSDK' })
   @IsString()
   @IsNotEmpty()
   template: string;
+}
+
+class IdentifyFingerprintDto {
+  @ApiProperty({ description: 'Base64-encoded fingerprint sample captured by DigitalPersona WebSDK' })
+  @IsString()
+  @IsNotEmpty()
+  sample: string;
 }
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ClientsService } from './clients.service';
@@ -71,8 +78,15 @@ export class ClientsController {
     return this.clientsService.remove(id);
   }
 
+  @Post('fingerprint/identify')
+  @Roles(Role.ADMINISTRATOR, Role.NOTARY_PUBLIC)
+  @ApiOperation({ summary: 'Identify a client by fingerprint sample — 1:N match against all enrolled templates' })
+  identifyFingerprint(@Body() dto: IdentifyFingerprintDto) {
+    return this.clientsService.identifyFingerprint(dto.sample);
+  }
+
   @Get('fingerprints/templates')
-  @ApiOperation({ summary: 'Get all enrolled fingerprint templates — used by the local Windows agent for 1:N matching' })
+  @ApiOperation({ summary: 'Get all enrolled fingerprint templates' })
   getAllFingerprintTemplates() {
     return this.clientsService.getAllFingerprintTemplates();
   }

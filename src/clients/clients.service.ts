@@ -166,4 +166,56 @@ export class ClientsService {
     });
     return clients.map((c) => ({ clientId: c.id, template: c.fingerprintTemplate! }));
   }
+
+  async identifyFingerprint(
+    sample: string,
+  ): Promise<{ matched: boolean; clientId: string | null; score: number }> {
+    const enrolled = await this.getAllFingerprintTemplates();
+    if (!enrolled.length) {
+      return { matched: false, clientId: null, score: 0 };
+    }
+
+    let bestScore = 0;
+    let bestClientId: string | null = null;
+
+    for (const { clientId, template } of enrolled) {
+      const score = this.computeSimilarity(sample, template);
+      if (score > bestScore) {
+        bestScore = score;
+        bestClientId = clientId;
+      }
+    }
+
+    // Threshold of 0.7 — adjust based on your DigitalPersona SDK tuning
+    const THRESHOLD = 0.7;
+    if (bestScore >= THRESHOLD) {
+      return { matched: true, clientId: bestClientId, score: Math.round(bestScore * 100) };
+    }
+    return { matched: false, clientId: null, score: Math.round(bestScore * 100) };
+  }
+
+  private computeSimilarity(a: string, b: string): number {
+    if (!a || !b) return 0;
+    // DigitalPersona wraps minutiae in a base64 JSON envelope — extract the payload
+    const extractPayload = (s: string): string => {
+      try {
+        const parsed = JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
+        return parsed?.Data ?? s;
+      } catch {
+        return s;
+      }
+    };
+    const pa = extractPayload(a);
+    const pb = extractPayload(b);
+    if (pa === pb) return 1;
+    const ba = Buffer.from(pa, 'base64');
+    const bb = Buffer.from(pb, 'base64');
+    const len = Math.min(ba.length, bb.length);
+    if (len === 0) return 0;
+    let matches = 0;
+    for (let i = 0; i < len; i++) {
+      if (ba[i] === bb[i]) matches++;
+    }
+    return matches / Math.max(ba.length, bb.length);
+  }
 }
