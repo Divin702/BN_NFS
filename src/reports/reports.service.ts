@@ -23,8 +23,11 @@ export class ReportsService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.client', 'client')
       .leftJoinAndSelect('d.assignedNotary', 'notary')
-      .leftJoinAndSelect('d.parties', 'parties')
-      .leftJoinAndSelect('parties.client', 'partyClient');
+      // Use a COUNT subquery instead of a JOIN so the clients table is
+      // never joined twice (once for d.client, once for parties.client),
+      // which was causing TypeORM to drop the dossier→client mapping on
+      // some rows.
+      .loadRelationCountAndMap('d.partiesCount', 'd.parties');
 
     if (requestingUser.role === Role.NOTARY_PUBLIC) {
       qb.andWhere('d.assignedNotaryId = :notaryId', {
@@ -80,7 +83,7 @@ export class ReportsService {
         0,
       ),
       totalParties: dossiers.reduce(
-        (s, d) => s + (d.parties?.length ?? 0),
+        (s, d) => s + ((d as unknown as { partiesCount: number }).partiesCount ?? 0),
         0,
       ),
     };
