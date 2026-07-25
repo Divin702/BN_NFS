@@ -1,21 +1,33 @@
 """
-ARATEK A600 Fingerprint Agent — Real SDK
-=========================================
-Uses: AraTrustFinger.dll (from Aratek TrustFinger SDK For Windows v1.0.8)
-Runs: Windows only (the machine the A600 is plugged into)
-Port: http://localhost:9000
+DigitalPersona U.are.U 4500 Fingerprint Agent
+=============================================
+Device : DigitalPersona U.are.U 4500  (VID_05BA / PID_000A, driver "usbdpfp")
+SDK    : dpfpdd.dll  (capture)  +  dpfj.dll  (feature extraction & matching)
+Runs   : Windows only, on the PC the reader is plugged into
+Port   : http://localhost:9000
 
-Setup (on Windows):
-  1. Install drivers: run AratekA600.msi + Aratek_Finger_Module_Drivers.exe
-  2. Copy these DLLs into this same folder:
-       AraTrustFinger.dll   (from SDK/CPP/x64/)
-       AraNFIQ.dll          (from SDK/CPP/x64/)
-       AraWSQ.dll           (from SDK/CPP/x64/)
-  3. pip install flask flask-cors requests
-  4. python agent.py
+Architecture
+------------
+  * ENROLL   : capture finger 4x -> build one enrollment template (FMD) -> base64.
+               The browser then POSTs that template to the NFS backend
+               ( POST /clients/:id/fingerprint ).
+  * IDENTIFY : capture finger 1x -> fetch every enrolled template from the backend
+               ( GET /clients/fingerprints/templates ) -> run dpfj matching HERE
+               -> return the matched clientId. (Matching happens in the agent,
+               NOT in Node — the backend has no fingerprint engine.)
 
-Enroll flow  : POST /enroll    — user places finger 3 times → returns base64 template
-Identify flow: POST /identify  — user places finger once  → returns matched clientId
+Setup
+-----
+  1. Reader driver already installed (usbdpfp) — confirmed working.
+  2. The DigitalPersona SDK DLLs live in:
+         C:\\Program Files (x86)\\NFS-Scanner\\Native_DLLs\\x64
+     dpfpdd.dll ALSO needs its dependency  nex_sdk.dll  in that same folder.
+     >>> If nex_sdk.dll is missing, capture cannot start — the agent will tell
+         you exactly that on startup. Copy nex_sdk.dll (from the same SDK package
+         these DLLs came from) next to dpfpdd.dll, OR install the official
+         HID DigitalPersona U.are.U SDK.
+  3. py -m pip install flask flask-cors requests
+  4. py agent.py
 """
 
 import base64
@@ -27,293 +39,547 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# ── Where the SDK DLLs live ──────────────────────────────────────────────────
+# The agent needs a folder that contains BOTH dpfpdd.dll and dpfj.dll (and, for
+# the OEM build, its dependency nex_sdk.dll). Set DP_SDK_DIR to override, else we
+# search the usual spots and pick the first one where dpfpdd.dll actually loads.
+_CANDIDATES = [
+    os.environ.get("DP_SDK_DIR"),
+    # Official U.are.U SDK / RTE install locations (preferred — self-contained)
+    r"C:\Program Files\DigitalPersona\Bin",
+    r"C:\Program Files (x86)\DigitalPersona\Bin",
+    r"C:\Program Files\DigitalPersona\RTE\Bin",
+    r"C:\Program Files (x86)\DigitalPersona\RTE\Bin",
+    r"C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\x64",
+    r"C:\Windows\System32",                       # RTE often copies runtime here
+    # The OEM bundle shipped with this project (needs nex_sdk.dll)
+    r"C:\Program Files (x86)\NFS-Scanner\Native_DLLs\x64",
+    r"C:\Program Files (x86)\NFS-Scanner\Native_DLLs",
+    r"C:\Program Files (x86)\NFS-Scanner",
+]
+DLL_DIR = next((d for d in _CANDIDATES
+                if d and os.path.isfile(os.path.join(d, "dpfpdd.dll"))
+                and os.path.isfile(os.path.join(d, "dpfj.dll"))), None)
+if DLL_DIR is None:
+    print("[ERR] Could not find a folder containing both dpfpdd.dll and dpfj.dll.")
+    print("      Set DP_SDK_DIR to your DigitalPersona SDK folder, e.g.:")
+    print('      set DP_SDK_DIR=C:\\path\\to\\sdk && py agent.py')
+    sys.exit(1)
+print(f"[INFO] Using SDK folder: {DLL_DIR}")
 
-DLL_NAME       = "AraTrustFinger.dll"   # must be in same folder or on PATH
-FEATURE_SIZE   = 4096                   # bytes — generous; SDK uses fixed internal size
-TEMPLATE_SIZE  = 8192                   # bytes — generous; SDK uses fixed internal size
-CAPTURE_TIMEOUT = 15000                 # ms to wait for finger placement per capture
-SECURITY_LEVEL  = 4                     # 1=lowest … 5=highest FAR/FRR
+if hasattr(os, "add_dll_directory"):
+    os.add_dll_directory(DLL_DIR)              # let dpfpdd.dll find its siblings
+os.environ["PATH"] = DLL_DIR + os.pathsep + os.environ.get("PATH", "")
 
-# ── Load DLL ─────────────────────────────────────────────────────────────────
+# ── Tunables ─────────────────────────────────────────────────────────────────
+ENROLL_CAPTURES = 4        # typical number the SDK asks for (advisory, for the UI)
+MAX_ENROLL_CAPTURES = 10   # safety stop; the SDK signals when it actually has enough
+CAPTURE_TIMEOUT = 15000    # ms to wait for a finger per capture
+MAX_FMD         = 2048     # bytes — generous buffer for one FMD template
+MAX_IMG         = 500000   # bytes — generous buffer for one raw image
+# Match threshold. dpfj_compare returns a dissimilarity score in 0..0x7FFFFFFF;
+# false-match-rate = score / 0x7FFFFFFF. Lower score = better match.
+# Target FAR of 1/100000 -> threshold ~= 0x7FFFFFFF / 100000.
+PROBABILITY_ONE = 0x7FFFFFFF
+TARGET_FAR      = 0.00001
+MATCH_THRESHOLD = int(PROBABILITY_ONE * TARGET_FAR)   # ~21474
 
-_dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), DLL_NAME)
+# ── SDK constants ────────────────────────────────────────────────────────────
+DPFPDD_SUCCESS              = 0
+DPFPDD_IMG_FMT_PIXEL_BUFFER = 0
+DPFPDD_IMG_PROC_DEFAULT     = 0
+DPFJ_FMD_ANSI_378_2004      = 0x001B0001
+DPFJ_POSITION_UNKNOWN       = 0          # dpfj.h DPFJ_FINGER_POSITION
+DPFJ_SUCCESS                = 0
+# dpfj.h: DPERROR(err) = err | (0x05BA << 16)
+DPFJ_E_MORE_DATA            = 0x0D | (0x05BA << 16)   # 0x05BA000D — "need more scans"
+DPFPDD_MAX_DEVICE_NAME_LENGTH = 1024
 
+# ── Load the DLLs (x64 -> __stdcall == __cdecl, so CDLL is fine) ─────────────
 try:
-    # __stdcall convention → WinDLL
-    sdk = ctypes.WinDLL(_dll_path)
-    print(f"[OK]  Loaded {DLL_NAME}")
+    dpfj = ctypes.CDLL(os.path.join(DLL_DIR, "dpfj.dll"))
 except OSError as e:
-    print(f"[ERR] Cannot load {DLL_NAME}: {e}")
-    print(f"      Expected path: {_dll_path}")
-    print("      Copy AraTrustFinger.dll (x64) from the SDK into this folder.")
+    print(f"[ERR] Cannot load dpfj.dll: {e}")
     sys.exit(1)
 
-# ── Declare SDK function signatures ──────────────────────────────────────────
+try:
+    dpfpdd = ctypes.CDLL(os.path.join(DLL_DIR, "dpfpdd.dll"))
+except OSError as e:
+    print("[ERR] Cannot load dpfpdd.dll (the capture driver).")
+    print(f"      {e}")
+    print("      This almost always means its dependency  nex_sdk.dll  is not")
+    print(f"      present in:  {DLL_DIR}")
+    print("      Fix: copy nex_sdk.dll (from the same SDK package as these DLLs)")
+    print("      into that folder, OR install the official DigitalPersona U.are.U SDK.")
+    print("      (Run `py pe-deps.py` to list dpfpdd.dll's missing dependencies.)")
+    sys.exit(1)
 
-sdk.ARAFPSCAN_GlobalInit.restype  = ctypes.c_int
-sdk.ARAFPSCAN_GlobalInit.argtypes = []
+# ── dpfpdd structs ───────────────────────────────────────────────────────────
+# NB: dpfpdd.h uses TWO different lengths — MAX_STR_LENGTH (128) inside
+# dpfpdd_hw_descr, and MAX_DEVICE_NAME_LENGTH (1024) for dev_info.name.
+# Using 1024 for both silently corrupts every field after descr.
+DPFPDD_MAX_STR_LENGTH = 128
 
-sdk.ARAFPSCAN_GlobalFree.restype  = ctypes.c_int
-sdk.ARAFPSCAN_GlobalFree.argtypes = []
+class DPFPDD_HW_DESCR(ctypes.Structure):
+    _fields_ = [
+        ("vendor_name",  ctypes.c_char * DPFPDD_MAX_STR_LENGTH),
+        ("product_name", ctypes.c_char * DPFPDD_MAX_STR_LENGTH),
+        ("serial_num",   ctypes.c_char * DPFPDD_MAX_STR_LENGTH),
+    ]
 
-sdk.ARAFPSCAN_GetDeviceCount.restype  = ctypes.c_int
-sdk.ARAFPSCAN_GetDeviceCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
+class DPFPDD_HW_ID(ctypes.Structure):
+    _fields_ = [("vendor_id", ctypes.c_ushort), ("product_id", ctypes.c_ushort)]
 
-sdk.ARAFPSCAN_OpenDevice.restype  = ctypes.c_int
-sdk.ARAFPSCAN_OpenDevice.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int]
+class DPFPDD_VER_INFO(ctypes.Structure):
+    _fields_ = [
+        ("major",       ctypes.c_int),
+        ("minor",       ctypes.c_int),
+        ("maintenance", ctypes.c_int),
+    ]
 
-sdk.ARAFPSCAN_CloseDevice.restype  = ctypes.c_int
-sdk.ARAFPSCAN_CloseDevice.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+class DPFPDD_HW_VERSION(ctypes.Structure):
+    _fields_ = [
+        ("hw_ver",  DPFPDD_VER_INFO),
+        ("fw_ver",  DPFPDD_VER_INFO),
+        ("bcd_rev", ctypes.c_ushort),
+    ]
 
-sdk.ARAFPSCAN_GetImageInfo.restype  = ctypes.c_int
-sdk.ARAFPSCAN_GetImageInfo.argtypes = [
-    ctypes.c_void_p,
-    ctypes.POINTER(ctypes.c_int),
-    ctypes.POINTER(ctypes.c_int),
-    ctypes.POINTER(ctypes.c_int),
+class DPFPDD_DEV_INFO(ctypes.Structure):
+    _fields_ = [
+        ("size",       ctypes.c_uint),
+        ("name",       ctypes.c_char * DPFPDD_MAX_DEVICE_NAME_LENGTH),
+        ("descr",      DPFPDD_HW_DESCR),
+        ("id",         DPFPDD_HW_ID),
+        ("ver",        DPFPDD_HW_VERSION),   # was missing -> misaligned the fields below
+        ("modality",   ctypes.c_int),
+        ("technology", ctypes.c_int),
+    ]
+
+class DPFPDD_IMAGE_INFO(ctypes.Structure):
+    _fields_ = [
+        ("size",   ctypes.c_uint),
+        ("width",  ctypes.c_uint),
+        ("height", ctypes.c_uint),
+        ("res",    ctypes.c_uint),
+        ("bpp",    ctypes.c_uint),
+    ]
+
+DPFPDD_MAX_RESOLUTIONS = 16   # header declares resolutions[1]; over-allocate to read them all
+
+class DPFPDD_DEV_CAPS(ctypes.Structure):
+    _fields_ = [
+        ("size",                ctypes.c_uint),
+        ("can_capture_image",   ctypes.c_int),
+        ("can_stream_image",    ctypes.c_int),
+        ("can_extract_features", ctypes.c_int),
+        ("can_match",           ctypes.c_int),
+        ("can_identify",        ctypes.c_int),
+        ("has_fp_storage",      ctypes.c_int),
+        ("indicator_type",      ctypes.c_uint),
+        ("has_pwr_mgmt",        ctypes.c_int),
+        ("has_calibration",     ctypes.c_int),
+        ("piv_compliant",       ctypes.c_int),
+        ("resolution_cnt",      ctypes.c_uint),
+        ("resolutions",         ctypes.c_uint * DPFPDD_MAX_RESOLUTIONS),
+    ]
+
+class DPFPDD_CAPTURE_PARAM(ctypes.Structure):
+    _fields_ = [
+        ("size",       ctypes.c_uint),
+        ("image_fmt",  ctypes.c_int),
+        ("image_proc", ctypes.c_int),
+        ("image_res",  ctypes.c_uint),
+    ]
+
+class DPFPDD_CAPTURE_RESULT(ctypes.Structure):
+    _fields_ = [
+        ("size",    ctypes.c_uint),
+        ("success", ctypes.c_int),
+        ("quality", ctypes.c_uint),
+        ("score",   ctypes.c_uint),        # was missing -> sizeof was 4 bytes short,
+                                           # so dpfpdd_capture rejected result.size
+                                           # with DPFPDD_E_INVALID_PARAMETER (0x05BA0014)
+        ("info",    DPFPDD_IMAGE_INFO),
+    ]
+
+DPFPDD_DEV = ctypes.c_void_p
+
+# ── dpfpdd signatures ────────────────────────────────────────────────────────
+dpfpdd.dpfpdd_init.restype = ctypes.c_int
+dpfpdd.dpfpdd_init.argtypes = []
+dpfpdd.dpfpdd_exit.restype = ctypes.c_int
+dpfpdd.dpfpdd_exit.argtypes = []
+dpfpdd.dpfpdd_query_devices.restype = ctypes.c_int
+dpfpdd.dpfpdd_query_devices.argtypes = [ctypes.POINTER(ctypes.c_uint),
+                                        ctypes.POINTER(DPFPDD_DEV_INFO)]
+dpfpdd.dpfpdd_open.restype = ctypes.c_int
+dpfpdd.dpfpdd_open.argtypes = [ctypes.c_char_p, ctypes.POINTER(DPFPDD_DEV)]
+dpfpdd.dpfpdd_close.restype = ctypes.c_int
+dpfpdd.dpfpdd_close.argtypes = [DPFPDD_DEV]
+dpfpdd.dpfpdd_get_device_capabilities.restype = ctypes.c_int
+dpfpdd.dpfpdd_get_device_capabilities.argtypes = [DPFPDD_DEV,
+                                                  ctypes.POINTER(DPFPDD_DEV_CAPS)]
+dpfpdd.dpfpdd_capture.restype = ctypes.c_int
+dpfpdd.dpfpdd_capture.argtypes = [
+    DPFPDD_DEV,
+    ctypes.POINTER(DPFPDD_CAPTURE_PARAM),
+    ctypes.c_uint,                              # timeout ms
+    ctypes.POINTER(DPFPDD_CAPTURE_RESULT),
+    ctypes.POINTER(ctypes.c_uint),              # image_size in/out
+    ctypes.POINTER(ctypes.c_ubyte),             # image buffer
 ]
 
-sdk.ARAFPSCAN_CaptureRawData.restype  = ctypes.c_int
-sdk.ARAFPSCAN_CaptureRawData.argtypes = [
-    ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_ubyte)
+# ── dpfj signatures (verified with dpfj-test.py) ─────────────────────────────
+dpfj.dpfj_create_fmd_from_raw.restype = ctypes.c_int
+dpfj.dpfj_create_fmd_from_raw.argtypes = [
+    ctypes.c_void_p, ctypes.c_uint,             # image_data, image_size
+    ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,  # width, height, dpi
+    ctypes.c_int,                               # finger_pos   <- was missing
+    ctypes.c_uint,                              # cbeff_id     <- was missing
+    ctypes.c_int,                               # fmd_type
+    ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint),  # fmd, fmd_size
 ]
-
-sdk.ARAFPSCAN_ExtractFeature.restype  = ctypes.c_int
-sdk.ARAFPSCAN_ExtractFeature.argtypes = [
-    ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_ubyte)
+dpfj.dpfj_compare.restype = ctypes.c_int
+dpfj.dpfj_compare.argtypes = [
+    ctypes.c_int, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint,
+    ctypes.c_int, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint,
+    ctypes.POINTER(ctypes.c_uint),
 ]
-
-sdk.ARAFPSCAN_GeneralizeTemplate.restype  = ctypes.c_int
-sdk.ARAFPSCAN_GeneralizeTemplate.argtypes = [
-    ctypes.c_void_p,
-    ctypes.POINTER(ctypes.c_ubyte),   # feature 1
-    ctypes.POINTER(ctypes.c_ubyte),   # feature 2
-    ctypes.POINTER(ctypes.c_ubyte),   # feature 3
-    ctypes.POINTER(ctypes.c_ubyte),   # output template
+dpfj.dpfj_start_enrollment.restype = ctypes.c_int
+dpfj.dpfj_start_enrollment.argtypes = [ctypes.c_int]
+dpfj.dpfj_add_to_enrollment.restype = ctypes.c_int
+dpfj.dpfj_add_to_enrollment.argtypes = [
+    ctypes.c_int, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint,
 ]
+dpfj.dpfj_create_enrollment_fmd.restype = ctypes.c_int
+dpfj.dpfj_create_enrollment_fmd.argtypes = [ctypes.c_void_p,
+                                            ctypes.POINTER(ctypes.c_uint)]
+dpfj.dpfj_finish_enrollment.restype = ctypes.c_int
+dpfj.dpfj_finish_enrollment.argtypes = []
 
-sdk.ARAFPSCAN_Verify.restype  = ctypes.c_int
-sdk.ARAFPSCAN_Verify.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_int,                     # security level
-    ctypes.POINTER(ctypes.c_ubyte),   # live feature
-    ctypes.POINTER(ctypes.c_ubyte),   # enrolled template
-    ctypes.POINTER(ctypes.c_int),     # out: score
-    ctypes.POINTER(ctypes.c_int),     # out: result (1=match, 0=no match)
-]
+# ── Global device state ──────────────────────────────────────────────────────
+_dev = DPFPDD_DEV(None)
 
-# ── Global state ──────────────────────────────────────────────────────────────
+# Capture resolution, in DPI. NEVER hardcode this: the U.are.U 4500 advertises
+# exactly one supported resolution (700), and passing anything else — 500, or the
+# "512" you might expect from the datasheet — makes dpfpdd_capture fail with
+# DPFPDD_E_INVALID_PARAMETER (0x05BA0014). Filled in from the reader at startup.
+_capture_res = 0
 
-_handle     = ctypes.c_void_p(None)
-_img_width  = 160    # default for FAP20; updated by GetImageInfo
-_img_height = 160
-
-# ── SDK lifecycle ─────────────────────────────────────────────────────────────
 
 def _sdk_init():
-    global _handle, _img_width, _img_height
+    """Init driver, find the reader, open it. Raises RuntimeError with a clear
+    message so the browser/user knows exactly what to fix."""
+    global _dev
 
-    ret = sdk.ARAFPSCAN_GlobalInit()
-    # -115 = "already initialised" — safe to ignore
-    if ret not in (0, -115):
-        raise RuntimeError(f"GlobalInit failed: {ret}")
+    rc = dpfpdd.dpfpdd_init()
+    if rc != DPFPDD_SUCCESS:
+        raise RuntimeError(f"dpfpdd_init failed (code 0x{rc:08X})")
 
-    count = ctypes.c_int(0)
-    ret = sdk.ARAFPSCAN_GetDeviceCount(ctypes.byref(count))
-    if ret != 0:
-        raise RuntimeError(f"GetDeviceCount failed: {ret}")
+    # Two-pass query: first get the count, then fill the array.
+    count = ctypes.c_uint(0)
+    dpfpdd.dpfpdd_query_devices(ctypes.byref(count), None)
     if count.value == 0:
-        raise RuntimeError("No ARATEK device found — is the A600 plugged in?")
+        raise RuntimeError("No DigitalPersona reader found — is the 4500 plugged in?")
 
-    ret = sdk.ARAFPSCAN_OpenDevice(ctypes.byref(_handle), 0)
-    # -117 = "already opened" — safe to ignore
-    if ret not in (0, -117):
-        raise RuntimeError(f"OpenDevice failed: {ret}")
+    arr = (DPFPDD_DEV_INFO * count.value)()
+    for i in range(count.value):
+        arr[i].size = ctypes.sizeof(DPFPDD_DEV_INFO)
+    rc = dpfpdd.dpfpdd_query_devices(ctypes.byref(count), arr)
+    if rc != DPFPDD_SUCCESS:
+        raise RuntimeError(f"dpfpdd_query_devices failed (code 0x{rc:08X})")
 
-    w = ctypes.c_int(0)
-    h = ctypes.c_int(0)
-    dpi = ctypes.c_int(0)
-    sdk.ARAFPSCAN_GetImageInfo(_handle, ctypes.byref(w), ctypes.byref(h), ctypes.byref(dpi))
-    if w.value > 0:
-        _img_width  = w.value
-        _img_height = h.value
-    print(f"[OK]  Device open — image size {_img_width}x{_img_height}, {dpi.value} DPI")
+    dev_name = arr[0].name                       # bytes; the instance path
+    rc = dpfpdd.dpfpdd_open(dev_name, ctypes.byref(_dev))
+    if rc != DPFPDD_SUCCESS:
+        raise RuntimeError(f"dpfpdd_open failed (code 0x{rc:08X})")
+
+    print(f"[OK]  Reader opened: "
+          f"{arr[0].descr.product_name.decode(errors='replace').strip()}")
+
+    # Ask the reader which resolutions it actually supports and use the first one.
+    global _capture_res
+    caps = DPFPDD_DEV_CAPS()
+    caps.size = ctypes.sizeof(DPFPDD_DEV_CAPS)
+    rc = dpfpdd.dpfpdd_get_device_capabilities(_dev, ctypes.byref(caps))
+    if rc != DPFPDD_SUCCESS:
+        raise RuntimeError(f"dpfpdd_get_device_capabilities failed — {_dpfpdd_err(rc)}")
+    if caps.resolution_cnt == 0:
+        raise RuntimeError("Reader reports no supported capture resolutions.")
+
+    supported = [caps.resolutions[i]
+                 for i in range(min(caps.resolution_cnt, DPFPDD_MAX_RESOLUTIONS))]
+    _capture_res = supported[0]
+    print(f"[OK]  Capture resolution: {_capture_res} dpi (reader supports {supported})")
 
 
 def _sdk_free():
-    sdk.ARAFPSCAN_CloseDevice(ctypes.byref(_handle))
-    sdk.ARAFPSCAN_GlobalFree()
+    if _dev:
+        dpfpdd.dpfpdd_close(_dev)
+    dpfpdd.dpfpdd_exit()
 
 
-# ── Core helpers ──────────────────────────────────────────────────────────────
+# Error/quality decoding — dpfpdd.h: DPERROR(err) = err | (0x05BA << 16)
+_DPFPDD_ERRORS = {
+    0x0a: "not implemented",
+    0x0b: "generic SDK failure",
+    0x0c: "no data",
+    0x0d: "more data needed (buffer too small)",
+    0x14: "invalid parameter — a ctypes struct layout does not match dpfpdd.h "
+          "(check the `size` fields); this is a code bug, not a finger problem",
+    0x15: "invalid device — the reader handle is stale; unplug/replug or restart the agent",
+    0x1e: "device busy — another program holds the reader",
+    0x1f: "device failure — unplug and replug the reader",
+    0x21: "PAD (liveness) library missing",
+    0x22: "PAD data missing",
+    0x23: "PAD license missing or invalid",
+    0x24: "PAD failure",
+}
 
-def _capture_feature():
-    """
-    Wait for a finger, capture raw image, extract feature.
-    Returns a ctypes array of FEATURE_SIZE bytes.
-    Raises RuntimeError on SDK error.
-    """
-    img_size = _img_width * _img_height
-    raw_buf  = (ctypes.c_ubyte * img_size)()
-
-    ret = sdk.ARAFPSCAN_CaptureRawData(_handle, CAPTURE_TIMEOUT, raw_buf)
-    if ret != 0:
-        raise RuntimeError(f"CaptureRawData failed (code {ret}). "
-                           "Lift and re-place finger, or check device connection.")
-
-    feat_buf = (ctypes.c_ubyte * FEATURE_SIZE)()
-    ret = sdk.ARAFPSCAN_ExtractFeature(_handle, 0, feat_buf)
-    if ret != 0:
-        raise RuntimeError(f"ExtractFeature failed (code {ret}). "
-                           "Finger quality too low — try again.")
-
-    return feat_buf
+# dpfpdd.h DPFPDD_QUALITY_* bit flags (0 == good)
+_QUALITY_FLAGS = [
+    (1 << 0,  "timed out — no finger detected"),
+    (1 << 1,  "capture canceled"),
+    (1 << 2,  "no finger detected"),
+    (1 << 3,  "fake finger detected"),
+    (1 << 4,  "finger too far left"),
+    (1 << 5,  "finger too far right"),
+    (1 << 6,  "finger too high"),
+    (1 << 7,  "finger too low"),
+    (1 << 8,  "finger off centre"),
+    (1 << 9,  "scan skewed"),
+    (1 << 10, "scan too short"),
+    (1 << 11, "scan too long"),
+    (1 << 12, "swipe too slow"),
+    (1 << 13, "swipe too fast"),
+    (1 << 14, "wrong swipe direction"),
+    (1 << 15, "reader needs cleaning"),
+]
 
 
-# ── Flask app ─────────────────────────────────────────────────────────────────
+# dpfj.h shares the 0x05BA facility but has its OWN codes above 0x14 —
+# do not decode dpfj results with the dpfpdd table.
+_DPFJ_ERRORS = {
+    0x0a:  "not implemented",
+    0x0b:  "feature extraction failed — the image had no usable ridge detail",
+    0x0c:  "no data",
+    # NB: context-dependent. From dpfj_add_to_enrollment this means "more scans
+    # needed" and is NOT an error — that path handles it before reaching here.
+    0x0d:  "more data needed (or the supplied buffer was too small)",
+    0x14:  "invalid parameter — a dpfj call signature does not match dpfj.h; "
+           "this is a code bug, not a finger problem",
+    0x65:  "invalid fingerprint image",
+    0x66:  "too small an area of the finger was on the reader — press the pad of "
+           "your finger flat across the whole sensor and hold still",
+    0xc9:  "invalid or corrupt template (FMD)",
+    0x12d: "enrolment already in progress",
+    0x12e: "enrolment was not started",
+    0x12f: "enrolment not ready — more captures needed",
+    0x130: "these scans do not look like the same finger — start the enrolment again",
+}
 
+
+def _dpfj_err(rc: int) -> str:
+    if (rc >> 16) & 0xFFFF == 0x05BA:
+        low = rc & 0xFFFF
+        if low in _DPFJ_ERRORS:
+            return f"{_DPFJ_ERRORS[low]} (code 0x{rc:08X})"
+    return f"unknown dpfj error (code 0x{rc:08X})"
+
+
+def _dpfpdd_err(rc: int) -> str:
+    """Human-readable dpfpdd error, so the UI never says 're-place finger' for a code bug."""
+    if (rc >> 16) & 0xFFFF == 0x05BA:
+        low = rc & 0xFFFF
+        if low in _DPFPDD_ERRORS:
+            return f"{_DPFPDD_ERRORS[low]} (code 0x{rc:08X})"
+    return f"unknown SDK error (code 0x{rc:08X})"
+
+
+def _quality_msg(quality: int) -> str:
+    reasons = [txt for bit, txt in _QUALITY_FLAGS if quality & bit]
+    if not reasons:
+        return f"capture rejected (quality 0x{quality:08X}) — try again"
+    return "capture rejected: " + ", ".join(reasons)
+
+
+def _capture_fmd():
+    """Wait for a finger, capture a raw image, extract one FMD template.
+    Returns a bytes object (the FMD). Raises RuntimeError on any SDK error."""
+    param = DPFPDD_CAPTURE_PARAM()
+    param.size       = ctypes.sizeof(DPFPDD_CAPTURE_PARAM)
+    param.image_fmt  = DPFPDD_IMG_FMT_PIXEL_BUFFER
+    param.image_proc = DPFPDD_IMG_PROC_DEFAULT
+    param.image_res  = _capture_res               # from the reader, not hardcoded
+
+    result = DPFPDD_CAPTURE_RESULT()
+    result.size = ctypes.sizeof(DPFPDD_CAPTURE_RESULT)
+    result.info.size = ctypes.sizeof(DPFPDD_IMAGE_INFO)
+
+    img_buf  = (ctypes.c_ubyte * MAX_IMG)()
+    img_size = ctypes.c_uint(MAX_IMG)
+
+    rc = dpfpdd.dpfpdd_capture(_dev, ctypes.byref(param), CAPTURE_TIMEOUT,
+                               ctypes.byref(result), ctypes.byref(img_size), img_buf)
+    if rc != DPFPDD_SUCCESS:
+        raise RuntimeError(f"capture failed — {_dpfpdd_err(rc)}")
+    if result.success == 0:
+        raise RuntimeError(_quality_msg(result.quality))
+
+    # Extract the FMD (minutiae template) from the raw image.
+    fmd     = (ctypes.c_ubyte * MAX_FMD)()
+    fmd_len = ctypes.c_uint(MAX_FMD)
+    rc = dpfj.dpfj_create_fmd_from_raw(
+        img_buf, img_size.value,
+        result.info.width, result.info.height, result.info.res,
+        DPFJ_POSITION_UNKNOWN,      # finger_pos — we don't track which finger
+        0,                          # cbeff_id — 0 is the documented default
+        DPFJ_FMD_ANSI_378_2004, fmd, ctypes.byref(fmd_len))
+    if rc != DPFJ_SUCCESS:
+        raise RuntimeError(_dpfj_err(rc))
+
+    return bytes(fmd[:fmd_len.value])
+
+
+def _compare(live_fmd: bytes, enrolled_fmd: bytes) -> int:
+    """Return dpfj dissimilarity score (lower = better). -1 on error."""
+    lb = (ctypes.c_ubyte * len(live_fmd)).from_buffer_copy(live_fmd)
+    eb = (ctypes.c_ubyte * len(enrolled_fmd)).from_buffer_copy(enrolled_fmd)
+    score = ctypes.c_uint(0)
+    rc = dpfj.dpfj_compare(
+        DPFJ_FMD_ANSI_378_2004, lb, len(live_fmd), 0,
+        DPFJ_FMD_ANSI_378_2004, eb, len(enrolled_fmd), 0,
+        ctypes.byref(score))
+    if rc != DPFJ_SUCCESS:
+        return -1
+    return score.value
+
+
+# ── Flask app ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*",
+                             "methods": ["GET", "POST", "OPTIONS"],
+                             "allow_headers": ["Content-Type", "Authorization"]}})
 
 
 @app.get("/health")
 def health():
-    """Check if the scanner is ready."""
-    try:
-        count = ctypes.c_int(0)
-        sdk.ARAFPSCAN_GetDeviceCount(ctypes.byref(count))
-        if count.value == 0:
-            return jsonify({"status": "error", "message": "No device found"}), 503
-        return jsonify({"status": "ok", "message": "Scanner ready", "devices": count.value})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "ok", "message": "DigitalPersona agent ready"})
 
 
 @app.post("/enroll")
 def enroll():
-    """
-    Capture 3 fingerprints and build a single robust template.
+    """Capture ENROLL_CAPTURES fingerprints -> one enrollment template.
+    Response 200: { "template": "<base64>", "captures": N }"""
+    rc = dpfj.dpfj_start_enrollment(DPFJ_FMD_ANSI_378_2004)
+    if rc != DPFJ_SUCCESS:
+        return jsonify({"error": f"start_enrollment failed — {_dpfj_err(rc)}"}), 500
 
-    The caller (browser) should instruct the user to place their finger 3 times.
-    Each capture blocks for up to CAPTURE_TIMEOUT ms waiting for a finger.
+    try:
+        # The SDK decides how many samples it needs — it is NOT a fixed count.
+        # dpfj_add_to_enrollment returns:
+        #   DPFJ_E_MORE_DATA -> good scan, keep going
+        #   DPFJ_SUCCESS     -> enough samples, enrolment is ready
+        # Treating MORE_DATA as an error aborts enrolment on the first scan.
+        taken = 0
+        ready = False
+        while taken < MAX_ENROLL_CAPTURES:
+            print(f"[ENROLL] capture {taken + 1} (need ~{ENROLL_CAPTURES}) — place finger …")
+            fmd = _capture_fmd()
+            buf = (ctypes.c_ubyte * len(fmd)).from_buffer_copy(fmd)
+            rc = dpfj.dpfj_add_to_enrollment(DPFJ_FMD_ANSI_378_2004, buf, len(fmd), 0)
+            taken += 1
 
-    Response 200: { "template": "<base64>", "captures": 3 }
-    Response 500: { "error": "..." }
-    """
-    features = []
+            if rc == DPFJ_SUCCESS:
+                print(f"[ENROLL] capture {taken} OK — enrolment ready")
+                ready = True
+                break
+            if rc == DPFJ_E_MORE_DATA:
+                print(f"[ENROLL] capture {taken} OK — more needed")
+                continue
 
-    for i in range(3):
-        print(f"[ENROLL] Waiting for capture {i+1}/3 …")
-        try:
-            feat = _capture_feature()
-            features.append(feat)
-            print(f"[ENROLL] Capture {i+1}/3 OK")
-        except RuntimeError as e:
-            return jsonify({"error": f"Capture {i+1}/3 failed: {e}"}), 500
+            dpfj.dpfj_finish_enrollment()
+            return jsonify({"error": f"add_to_enrollment failed — {_dpfj_err(rc)}"}), 500
 
-    # Combine 3 features into one durable template
-    tpl_buf = (ctypes.c_ubyte * TEMPLATE_SIZE)()
-    ret = sdk.ARAFPSCAN_GeneralizeTemplate(
-        _handle,
-        features[0], features[1], features[2],
-        tpl_buf,
-    )
-    if ret != 0:
-        return jsonify({"error": f"GeneralizeTemplate failed (code {ret})"}), 500
+        if not ready:
+            dpfj.dpfj_finish_enrollment()
+            return jsonify({"error":
+                f"Enrolment did not complete after {taken} scans. Use the same "
+                f"finger each time and cover the whole sensor."}), 500
 
-    template_b64 = base64.b64encode(bytes(tpl_buf)).decode()
-    print("[ENROLL] Template generated OK")
-    return jsonify({"template": template_b64, "captures": 3})
+        out     = (ctypes.c_ubyte * MAX_FMD)()
+        out_len = ctypes.c_uint(MAX_FMD)
+        rc = dpfj.dpfj_create_enrollment_fmd(out, ctypes.byref(out_len))
+        dpfj.dpfj_finish_enrollment()
+        if rc != DPFJ_SUCCESS:
+            return jsonify({"error": f"create_enrollment_fmd failed — {_dpfj_err(rc)}"}), 500
+
+        template = base64.b64encode(bytes(out[:out_len.value])).decode()
+        print(f"[ENROLL] template built OK ({out_len.value} bytes, {taken} scans)")
+        return jsonify({"template": template, "captures": taken})
+    except RuntimeError as e:
+        dpfj.dpfj_finish_enrollment()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.post("/identify")
 def identify():
-    """
-    Capture 1 fingerprint and match it against all enrolled client templates.
-
-    Body (JSON):
-      {
-        "backendUrl": "http://localhost:3001",   // NFS backend
-        "token": "<jwt>"                          // staff JWT
-      }
-
-    The agent calls GET /clients/fingerprints/templates on the backend,
-    then calls ARAFPSCAN_Verify for each template until a match is found.
-
-    Response 200: { "matched": true,  "clientId": "<uuid>", "score": <int> }
-                  { "matched": false, "clientId": null,     "score": <int> }
-    Response 500: { "error": "..." }
-    """
+    """Capture 1 finger, match against all enrolled templates from the backend.
+    Body: { "backendUrl": "...", "token": "<jwt>" }
+    Response: { "matched": bool, "clientId": str|None, "score": int }"""
     body        = request.get_json(force=True, silent=True) or {}
     backend_url = body.get("backendUrl", "http://localhost:3001").rstrip("/")
     token       = body.get("token", "")
 
-    # 1. Capture live fingerprint feature
-    print("[IDENTIFY] Waiting for finger …")
     try:
-        live_feat = _capture_feature()
+        print("[IDENTIFY] place finger …")
+        live = _capture_fmd()
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
-    print("[IDENTIFY] Captured OK")
 
-    # 2. Fetch all enrolled templates from NFS backend
     try:
-        resp = requests.get(
-            f"{backend_url}/clients/fingerprints/templates",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
+        resp = requests.get(f"{backend_url}/clients/fingerprints/templates",
+                            headers={"Authorization": f"Bearer {token}"}, timeout=10)
         resp.raise_for_status()
-        entries = resp.json()   # [{ clientId: "...", template: "<b64>" }, ...]
+        payload = resp.json()
+        entries = payload.get("data", payload) if isinstance(payload, dict) else payload
     except Exception as e:
-        return jsonify({"error": f"Could not fetch templates: {e}"}), 500
+        return jsonify({"error": f"could not fetch templates: {e}"}), 500
 
+    # `enrolled` lets the UI distinguish "nobody is enrolled yet" from
+    # "scanned fine, but this finger isn't a match" — very different problems.
     if not entries:
-        print("[IDENTIFY] No enrolled templates in DB")
-        return jsonify({"matched": False, "clientId": None, "score": 0})
+        return jsonify({"matched": False, "clientId": None, "score": 0, "enrolled": 0})
 
-    print(f"[IDENTIFY] Matching against {len(entries)} templates …")
-
-    # 3. 1:N matching — stop at first match
-    best_score  = 0
+    print(f"[IDENTIFY] matching against {len(entries)} template(s) …")
+    best_score  = PROBABILITY_ONE + 1     # lower is better
     best_client = None
-
     for entry in entries:
-        tpl_b64  = entry.get("template")
+        tpl_b64   = entry.get("template")
         client_id = entry.get("clientId")
         if not tpl_b64 or not client_id:
             continue
-
-        tpl_bytes = base64.b64decode(tpl_b64)
-        tpl_buf   = (ctypes.c_ubyte * len(tpl_bytes))(*tpl_bytes)
-
-        score  = ctypes.c_int(0)
-        result = ctypes.c_int(0)
-        ret = sdk.ARAFPSCAN_Verify(
-            _handle, SECURITY_LEVEL,
-            live_feat, tpl_buf,
-            ctypes.byref(score),
-            ctypes.byref(result),
-        )
-
-        if ret == 0 and result.value == 1:
-            print(f"[IDENTIFY] Match → clientId={client_id}  score={score.value}")
-            return jsonify({
-                "matched":  True,
-                "clientId": client_id,
-                "score":    score.value,
-            })
-
-        if score.value > best_score:
-            best_score  = score.value
+        try:
+            enrolled = base64.b64decode(tpl_b64)
+        except Exception:
+            continue
+        score = _compare(live, enrolled)
+        if score < 0:
+            continue
+        if score < best_score:
+            best_score  = score
             best_client = client_id
 
-    print(f"[IDENTIFY] No match (best score={best_score})")
-    return jsonify({"matched": False, "clientId": None, "score": best_score})
+    if best_client is not None and best_score <= MATCH_THRESHOLD:
+        print(f"[IDENTIFY] MATCH clientId={best_client} score={best_score}")
+        return jsonify({"matched": True, "clientId": best_client,
+                        "score": best_score, "enrolled": len(entries)})
 
+    print(f"[IDENTIFY] no match (best score={best_score})")
+    return jsonify({"matched": False, "clientId": None,
+                    "score": best_score if best_client else 0,
+                    "enrolled": len(entries)})
 
-# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     try:
@@ -322,11 +588,10 @@ if __name__ == "__main__":
         print(f"[ERR] {e}")
         sys.exit(1)
 
-    print("[INFO] Fingerprint agent listening on http://localhost:9000")
+    print("[INFO] DigitalPersona agent listening on http://localhost:9000")
     print("[INFO] Ctrl+C to stop\n")
-
     try:
         app.run(host="127.0.0.1", port=9000, debug=False, threaded=False)
     finally:
-        print("\n[INFO] Shutting down …")
+        print("\n[INFO] shutting down …")
         _sdk_free()
