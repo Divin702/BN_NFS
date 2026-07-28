@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -8,6 +8,7 @@ import { Role } from './enums/role.enum';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersQueryDto } from './dto/users-query.dto';
+import { UpdateNotaryServicesDto } from './dto/update-notary-services.dto';
 import { User } from './entities/user.entity';
 
 @ApiTags('Users')
@@ -57,5 +58,11 @@ export class UsersController {
   @ApiOperation({ summary: 'Resend invitation email (resets the 6-hour token)' })
   resend(@Param('id') id: string, @CurrentUser() admin: User) {
     return this.authService.resendInvitation(id, admin);
+  }
+
+  @Patch(':id/services')
+  @ApiOperation({ summary: "Replace the set of services a notary offers (admin only)" })
+  setServices(@Param('id') id: string, @Body() dto: UpdateNotaryServicesDto) {
+    return this.usersService.setServices(id, dto.serviceIds);
   }
 }
