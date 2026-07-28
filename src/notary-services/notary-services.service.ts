@@ -33,7 +33,7 @@ export class NotaryServicesService {
   async findAll(
     query: SearchNotaryServicesDto,
   ): Promise<{ data: NotaryService[]; total: number; page: number; limit: number }> {
-    const { q, isActive, page = 1, limit = 50 } = query;
+    const { q, isActive, notaryId, page = 1, limit = 50 } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.notaryServicesRepository.createQueryBuilder('service');
@@ -44,6 +44,16 @@ export class NotaryServicesService {
 
     if (isActive !== undefined) {
       qb.andWhere('service.isActive = :isActive', { isActive });
+    }
+
+    // Restrict to the services a specific notary offers (via the join table).
+    if (notaryId) {
+      qb.innerJoin(
+        'notary_service_assignments',
+        'nsa',
+        'nsa."serviceId" = service.id AND nsa."userId" = :notaryId',
+        { notaryId },
+      );
     }
 
     qb.orderBy('service.createdAt', 'DESC').skip(skip).take(limit);
