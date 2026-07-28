@@ -20,6 +20,9 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { User } from '../users/entities/user.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import { NotaryService } from '../notary-services/entities/notary-service.entity';
 
 @Injectable()
 export class AuthService {
@@ -28,6 +31,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
     private readonly clientsService: ClientsService,
+    @InjectRepository(NotaryService)
+    private readonly notaryServicesRepo: Repository<NotaryService>,
   ) {}
 
   async registerClient(dto: {
@@ -96,12 +101,19 @@ export class AuthService {
     const token = uuidv4();
     const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000); // 6 hours
 
+    const { serviceIds, ...userData } = dto;
     const user = this.usersService.create({
-      ...dto,
+      ...userData,
       invitationToken: token,
       invitationExpiresAt: expiresAt,
       isActive: false,
     });
+
+    // Attach the notary's services (ignored for non-notary roles).
+    if (dto.role === Role.NOTARY_PUBLIC && serviceIds?.length) {
+      user.services = await this.notaryServicesRepo.findBy({ id: In(serviceIds) });
+    }
+
     const saved = await this.usersService.save(user);
 
     try {

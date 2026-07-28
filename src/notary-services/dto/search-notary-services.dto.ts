@@ -1,12 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class SearchNotaryServicesDto {
   @ApiPropertyOptional({ description: 'Search by name' })
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({ description: 'Only services offered by this notary' })
+  @IsOptional()
+  @IsUUID('4')
+  notaryId?: string;
 
   @ApiPropertyOptional({ description: 'Filter by active status' })
   @IsOptional()
