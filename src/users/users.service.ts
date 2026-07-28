@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { NotaryService } from '../notary-services/entities/notary-service.entity';
 import { Role } from './enums/role.enum';
 
 export interface UsersQuery {
@@ -27,6 +28,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly repo: Repository<User>,
+    @InjectRepository(NotaryService)
+    private readonly servicesRepo: Repository<NotaryService>,
   ) {}
 
   findByEmail(email: string) {
@@ -58,7 +61,9 @@ export class UsersService {
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
     const skip = (page - 1) * limit;
 
-    const qb = this.repo.createQueryBuilder('u');
+    const qb = this.repo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.services', 'services');
 
     if (query.search) {
       const term = `%${query.search}%`;
@@ -132,8 +137,27 @@ export class UsersService {
     return this.repo.find({
       where: { role: Role.NOTARY_PUBLIC, isActive: true, isDisabled: false },
       select: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'organization', 'address', 'picture', 'signature'],
+      relations: { services: true },
       order: { firstName: 'ASC' },
     });
+  }
+
+  /** Replace the set of services a notary offers (admin action). */
+  async setServices(id: string, serviceIds: string[]): Promise<SafeUser> {
+    const user = await this.repo.findOne({
+      where: { id },
+      relations: { services: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role !== Role.NOTARY_PUBLIC) {
+      throw new NotFoundException('Only notaries can be assigned services');
+    }
+    user.services = serviceIds.length
+      ? await this.servicesRepo.findBy({ id: In(serviceIds) })
+      : [];
+    const saved = await this.repo.save(user);
+    const { password, invitationToken, ...safe } = saved;
+    return safe;
   }
 
   save(user: User) {
