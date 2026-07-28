@@ -7,10 +7,13 @@ import {
   BeforeInsert,
   BeforeUpdate,
   ManyToOne,
+  ManyToMany,
   JoinColumn,
+  JoinTable,
 } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../enums/role.enum';
+import { NotaryService } from '../../notary-services/entities/notary-service.entity';
 
 @Entity('users')
 export class User {
@@ -70,6 +73,15 @@ export class User {
 
   @Column({ nullable: true })
   signature: string;
+
+  // Services this notary offers. Only meaningful for role = notary_public.
+  @ManyToMany(() => NotaryService, { cascade: false })
+  @JoinTable({
+    name: 'notary_service_assignments',
+    joinColumn: { name: 'userId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'serviceId', referencedColumnName: 'id' },
+  })
+  services: NotaryService[];
 
   @Column({ nullable: true })
   lastActiveAt: Date;
