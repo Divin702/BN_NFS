@@ -5,6 +5,8 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
+  IsArray,
+  IsUUID,
   Matches,
 } from 'class-validator';
 import { Role } from '../../users/enums/role.enum';
@@ -43,4 +45,13 @@ export class InviteUserDto {
   @IsOptional()
   @IsString()
   organization?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'IDs of the services this notary offers (notaries only)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  serviceIds?: string[];
 }
