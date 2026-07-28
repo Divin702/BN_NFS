@@ -17,7 +17,6 @@ npm-debug.log*
 Thumbs.db
 
 # IDE
-.vscode/
 .idea/
 *.suo
 *.ntvs*
@@ -36,4 +35,3 @@ config.bat
 temp_auto_push.bat
 temp_interactive_push.bat
 branch_structure.json
-.env
